@@ -34,10 +34,21 @@
   "options": {
     "step": {
       "init": {
+        "title": "Solvis Heating Settings",
+        "description": "Update connection parameters and polling interval.",
         "data": {
+          "host": "Host",
+          "username": "Username",
+          "password": "Password",
+          "realm": "Realm",
           "scan_interval": "Scan interval (seconds)"
         }
       }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to controller. Check host and network.",
+      "invalid_auth": "Authentication failed. Check username and password.",
+      "invalid_payload": "Controller returned invalid data. Check if the device is a supported Solvis model."
     }
   },
   "entity": {

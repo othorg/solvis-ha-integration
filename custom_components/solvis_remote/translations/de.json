@@ -34,10 +34,21 @@
   "options": {
     "step": {
       "init": {
+        "title": "Solvis Heizung Einstellungen",
+        "description": "Verbindungsparameter und Abfrageintervall anpassen.",
         "data": {
+          "host": "Host",
+          "username": "Benutzername",
+          "password": "Passwort",
+          "realm": "Realm",
           "scan_interval": "Abfrageintervall (Sekunden)"
         }
       }
+    },
+    "error": {
+      "cannot_connect": "Verbindung zum Regler nicht moeglich. Host und Netzwerk pruefen.",
+      "invalid_auth": "Authentifizierung fehlgeschlagen. Benutzername und Passwort pruefen.",
+      "invalid_payload": "Regler liefert ungueltige Daten. Pruefen ob es ein unterstuetztes Solvis-Modell ist."
     }
   },
   "entity": {

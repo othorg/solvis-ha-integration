@@ -136,3 +136,30 @@ class TestUpdateListener:
             await hass.async_block_till_done()
 
         assert coordinator.update_interval == timedelta(seconds=120)
+
+    async def test_connection_params_update(self, hass: HomeAssistant) -> None:
+        """Changing host/credentials via data must recreate the client."""
+        from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+        entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG_DATA)
+        entry.add_to_hass(hass)
+
+        with _patch_fetch():
+            await hass.config_entries.async_setup(entry.entry_id)
+            await hass.async_block_till_done()
+
+        coordinator = entry.runtime_data
+        old_client = coordinator.client
+        assert old_client.host == "192.168.1.100"
+
+        # Simulate data + options update (as the options flow does)
+        new_data = {**MOCK_CONFIG_DATA, "host": "10.0.0.50"}
+        with _patch_fetch():
+            hass.config_entries.async_update_entry(
+                entry, data=new_data, options={CONF_SCAN_INTERVAL: DEFAULT_SCAN_INTERVAL}
+            )
+            await hass.async_block_till_done()
+
+        # The listener must have replaced the client
+        assert coordinator.client is not old_client
+        assert coordinator.client.host == "10.0.0.50"

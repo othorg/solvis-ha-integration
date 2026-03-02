@@ -71,8 +71,18 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Handle options update — adjust coordinator interval and refresh immediately."""
+    """Handle options/data update — update client, adjust interval, refresh."""
     coordinator: SolvisDataUpdateCoordinator = entry.runtime_data
+
+    # Update client with (potentially changed) connection parameters
+    coordinator.client = SolvisClient(
+        host=entry.data[CONF_HOST],
+        username=entry.data[CONF_USERNAME],
+        password=entry.data[CONF_PASSWORD],
+        realm=entry.data.get(CONF_REALM, DEFAULT_REALM),
+        timeout=DEFAULT_TIMEOUT,
+    )
+
     new_interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
     coordinator.update_interval = timedelta(seconds=new_interval)
     await coordinator.async_request_refresh()

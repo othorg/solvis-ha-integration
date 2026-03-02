@@ -113,11 +113,10 @@ class TestConfigFlow:
 # ---------------------------------------------------------------------------
 
 class TestOptionsFlow:
-    """Test the options flow for changing scan interval."""
+    """Test the options flow for changing settings."""
 
-    async def test_options_flow(self, hass: HomeAssistant) -> None:
-        """Test that scan interval can be changed via options."""
-        # Create a mock config entry
+    async def _create_entry(self, hass: HomeAssistant):
+        """Helper: create a config entry via the config flow."""
         with _patch_fetch():
             result = await hass.config_entries.flow.async_init(
                 DOMAIN, context={"source": config_entries.SOURCE_USER}
@@ -125,19 +124,112 @@ class TestOptionsFlow:
             result = await hass.config_entries.flow.async_configure(
                 result["flow_id"], MOCK_USER_INPUT
             )
+        return result["result"]
 
-        entry = result["result"]
+    async def test_options_flow_change_interval(self, hass: HomeAssistant) -> None:
+        """Test that scan interval can be changed via options."""
+        entry = await self._create_entry(hass)
 
         # Start options flow
         result = await hass.config_entries.options.async_init(entry.entry_id)
         assert result["type"] is FlowResultType.FORM
         assert result["step_id"] == "init"
 
-        result = await hass.config_entries.options.async_configure(
-            result["flow_id"], {"scan_interval": 120}
-        )
+        # Submit with all required fields + new interval
+        with _patch_fetch():
+            result = await hass.config_entries.options.async_configure(
+                result["flow_id"],
+                {
+                    "host": "192.168.1.100",
+                    "username": "admin",
+                    "password": "secret",
+                    "realm": DEFAULT_REALM,
+                    "scan_interval": 120,
+                },
+            )
         assert result["type"] is FlowResultType.CREATE_ENTRY
         assert entry.options["scan_interval"] == 120
+
+    async def test_options_flow_change_host(self, hass: HomeAssistant) -> None:
+        """Test that host can be changed via options."""
+        entry = await self._create_entry(hass)
+
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+
+        with _patch_fetch():
+            result = await hass.config_entries.options.async_configure(
+                result["flow_id"],
+                {
+                    "host": "10.0.0.50",
+                    "username": "admin",
+                    "password": "secret",
+                    "realm": DEFAULT_REALM,
+                    "scan_interval": DEFAULT_SCAN_INTERVAL,
+                },
+            )
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+        assert entry.data["host"] == "10.0.0.50"
+
+    async def test_options_flow_change_credentials(self, hass: HomeAssistant) -> None:
+        """Test that username and password can be changed via options."""
+        entry = await self._create_entry(hass)
+
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+
+        with _patch_fetch():
+            result = await hass.config_entries.options.async_configure(
+                result["flow_id"],
+                {
+                    "host": "192.168.1.100",
+                    "username": "newuser",
+                    "password": "newpass",
+                    "realm": DEFAULT_REALM,
+                    "scan_interval": DEFAULT_SCAN_INTERVAL,
+                },
+            )
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+        assert entry.data["username"] == "newuser"
+        assert entry.data["password"] == "newpass"
+
+    async def test_options_flow_auth_error(self, hass: HomeAssistant) -> None:
+        """Auth error in options flow must show error and stay on form."""
+        entry = await self._create_entry(hass)
+
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+
+        with _patch_fetch(side_effect=SolvisAuthError("401")):
+            result = await hass.config_entries.options.async_configure(
+                result["flow_id"],
+                {
+                    "host": "192.168.1.100",
+                    "username": "wrong",
+                    "password": "wrong",
+                    "realm": DEFAULT_REALM,
+                    "scan_interval": DEFAULT_SCAN_INTERVAL,
+                },
+            )
+        assert result["type"] is FlowResultType.FORM
+        assert result["errors"] == {"base": "invalid_auth"}
+
+    async def test_options_flow_connection_error(self, hass: HomeAssistant) -> None:
+        """Connection error in options flow must show error and stay on form."""
+        entry = await self._create_entry(hass)
+
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+
+        with _patch_fetch(side_effect=SolvisConnectionError("timeout")):
+            result = await hass.config_entries.options.async_configure(
+                result["flow_id"],
+                {
+                    "host": "192.168.1.200",
+                    "username": "admin",
+                    "password": "secret",
+                    "realm": DEFAULT_REALM,
+                    "scan_interval": DEFAULT_SCAN_INTERVAL,
+                },
+            )
+        assert result["type"] is FlowResultType.FORM
+        assert result["errors"] == {"base": "cannot_connect"}
 
 
 # ---------------------------------------------------------------------------

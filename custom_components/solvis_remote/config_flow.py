@@ -163,11 +163,58 @@ class SolvisOptionsFlow(OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Handle the options step."""
-        if user_input is not None:
-            return self.async_create_entry(data=user_input)
+        """Handle the options step — connection params + scan interval."""
+        errors: dict[str, str] = {}
 
-        current_interval = self.config_entry.options.get(
+        if user_input is not None:
+            # Validate connection with the (potentially changed) parameters
+            test_data = {
+                CONF_HOST: user_input[CONF_HOST],
+                CONF_USERNAME: user_input[CONF_USERNAME],
+                CONF_PASSWORD: user_input[CONF_PASSWORD],
+                CONF_REALM: user_input.get(CONF_REALM, DEFAULT_REALM),
+            }
+            client = SolvisClient(
+                host=test_data[CONF_HOST],
+                username=test_data[CONF_USERNAME],
+                password=test_data[CONF_PASSWORD],
+                realm=test_data[CONF_REALM],
+                timeout=DEFAULT_TIMEOUT,
+            )
+            try:
+                await self.hass.async_add_executor_job(client.fetch_data)
+            except SolvisAuthError:
+                errors["base"] = "invalid_auth"
+            except SolvisConnectionError:
+                errors["base"] = "cannot_connect"
+            except SolvisPayloadError:
+                errors["base"] = "invalid_payload"
+            except Exception:
+                logger.exception("Unexpected error during options connection test")
+                errors["base"] = "cannot_connect"
+
+            if not errors:
+                # Persist connection params in data, scan_interval in options
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry,
+                    data={
+                        CONF_HOST: user_input[CONF_HOST],
+                        CONF_USERNAME: user_input[CONF_USERNAME],
+                        CONF_PASSWORD: user_input[CONF_PASSWORD],
+                        CONF_REALM: user_input.get(CONF_REALM, DEFAULT_REALM),
+                    },
+                )
+                return self.async_create_entry(
+                    data={CONF_SCAN_INTERVAL: user_input[CONF_SCAN_INTERVAL]},
+                )
+
+        # Pre-fill with current values
+        entry = self.config_entry
+        current_host = entry.data.get(CONF_HOST, "")
+        current_user = entry.data.get(CONF_USERNAME, "")
+        current_pass = entry.data.get(CONF_PASSWORD, "")
+        current_realm = entry.data.get(CONF_REALM, DEFAULT_REALM)
+        current_interval = entry.options.get(
             CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
         )
 
@@ -175,6 +222,10 @@ class SolvisOptionsFlow(OptionsFlow):
             step_id="init",
             data_schema=vol.Schema(
                 {
+                    vol.Required(CONF_HOST, default=current_host): str,
+                    vol.Required(CONF_USERNAME, default=current_user): str,
+                    vol.Required(CONF_PASSWORD, default=current_pass): str,
+                    vol.Optional(CONF_REALM, default=current_realm): str,
                     vol.Optional(
                         CONF_SCAN_INTERVAL,
                         default=current_interval,
@@ -184,4 +235,5 @@ class SolvisOptionsFlow(OptionsFlow):
                     ),
                 }
             ),
+            errors=errors,
         )
