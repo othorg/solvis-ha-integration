@@ -1,0 +1,73 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Solvis Heizungsregler",
+        "description": "Verbinde dich mit deinem Solvis-Regler ueber die lokale Weboberflaeche.",
+        "data": {
+          "host": "Host",
+          "username": "Benutzername",
+          "password": "Passwort",
+          "realm": "Realm",
+          "scan_interval": "Abfrageintervall (Sekunden)"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Solvis-Regler erneut authentifizieren",
+        "description": "Authentifizierung fuer {host} fehlgeschlagen. Bitte aktualisierte Zugangsdaten eingeben.",
+        "data": {
+          "username": "Benutzername",
+          "password": "Passwort"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Verbindung zum Regler nicht moeglich. Host und Netzwerk pruefen.",
+      "invalid_auth": "Authentifizierung fehlgeschlagen. Benutzername und Passwort pruefen."
+    },
+    "abort": {
+      "already_configured": "Dieser Regler ist bereits konfiguriert.",
+      "reauth_successful": "Erneute Authentifizierung erfolgreich."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "scan_interval": "Abfrageintervall (Sekunden)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "hot_water_buffer": { "name": "Warmwasserpuffer" },
+      "hot_water_temperature": { "name": "Warmwassertemperatur" },
+      "storage_reference": { "name": "Speicherreferenz" },
+      "heating_buffer_top": { "name": "Heizungspuffer oben" },
+      "flow_temperature_solar": { "name": "Vorlauftemperatur Solar" },
+      "return_temperature": { "name": "Ruecklauftemperatur" },
+      "collector_temperature": { "name": "Kollektortemperatur" },
+      "heating_buffer_bottom": { "name": "Heizungspuffer unten" },
+      "outdoor_temperature": { "name": "Aussentemperatur" },
+      "circulation_temperature": { "name": "Zirkulationstemperatur" },
+      "flow_temperature_heating": { "name": "Vorlauftemperatur Heizkreis" },
+      "collector_transfer": { "name": "Kollektor-Uebergabe" },
+      "room_temperature": { "name": "Raumtemperatur" },
+      "flow_rate_solar": { "name": "Durchfluss Solar" },
+      "flow_rate_hot_water": { "name": "Durchfluss Warmwasser" },
+      "burner_modulation": { "name": "Brennermodulation" },
+      "solar_power": { "name": "Solarleistung" },
+      "solar_yield": { "name": "Solarertrag" },
+      "solar_temperature_delta": { "name": "Temperaturdifferenz Solar" },
+      "burner_power": { "name": "Brennerleistung" }
+    },
+    "binary_sensor": {
+      "solar_pump": { "name": "Solarpumpe" },
+      "hot_water_pump": { "name": "Warmwasserpumpe" },
+      "heating_circuit_pump": { "name": "Heizkreispumpe" },
+      "circulation_pump": { "name": "Zirkulationspumpe" },
+      "burner": { "name": "Brenner" }
+    }
+  }
+}
