@@ -245,3 +245,90 @@ class TestPayloadError:
 
         assert result["type"] is FlowResultType.FORM
         assert result["errors"] == {"base": "invalid_payload"}
+
+
+# ---------------------------------------------------------------------------
+# CGI section field tests
+# ---------------------------------------------------------------------------
+
+class TestCgiSectionField:
+    """Test the section field in CGI profile add/edit forms."""
+
+    async def _create_entry(self, hass: HomeAssistant):
+        """Helper: create a config entry via the config flow."""
+        with _patch_fetch():
+            result = await hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": config_entries.SOURCE_USER}
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], MOCK_USER_INPUT
+            )
+        return result["result"]
+
+    async def test_cgi_add_with_section(self, hass: HomeAssistant) -> None:
+        """Adding a profile with section stores section in profile."""
+        entry = await self._create_entry(hass)
+
+        # Navigate: menu → cgi_menu → cgi_add
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "cgi_menu"}
+        )
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"profile": "__new__"}
+        )
+        assert result["step_id"] == "cgi_add"
+
+        # Submit with section
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            {
+                "profile_key": "test_solar",
+                "name": "Solar Mode",
+                "section": "solar",
+                "options_text": "on:On:100:100\noff:Off:200:200",
+            },
+        )
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+        profiles = entry.options[CONF_CGI_PROFILES]
+        assert profiles["test_solar"]["section"] == "solar"
+
+    async def test_cgi_add_without_section(self, hass: HomeAssistant) -> None:
+        """Adding a profile with empty section does not store section key."""
+        entry = await self._create_entry(hass)
+
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "cgi_menu"}
+        )
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"profile": "__new__"}
+        )
+
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            {
+                "profile_key": "test_legacy",
+                "name": "Legacy Mode",
+                "section": "",
+                "options_text": "on:On:100:100\noff:Off:200:200",
+            },
+        )
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+        profiles = entry.options[CONF_CGI_PROFILES]
+        assert "section" not in profiles["test_legacy"]
+
+    async def test_cgi_add_section_in_schema(self, hass: HomeAssistant) -> None:
+        """CGI add form must include section field in schema."""
+        entry = await self._create_entry(hass)
+
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "cgi_menu"}
+        )
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"profile": "__new__"}
+        )
+
+        schema_keys = [str(k) for k in result["data_schema"].schema.keys()]
+        assert "section" in schema_keys

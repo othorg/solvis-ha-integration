@@ -17,6 +17,7 @@ from .const import (
     CGI_COORD_MAX,
     CGI_DELAY_MAX,
     CGI_DELAY_MIN,
+    CGI_SECTIONS,
     CGI_WAKEUP_MAX,
     CONF_CGI_PROFILES,
     CONF_ENABLE_CGI,
@@ -32,6 +33,9 @@ from .const import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Section dropdown options with explicit "None" option
+_SECTION_OPTIONS = {"": "None", **{k: v["name"] for k, v in CGI_SECTIONS.items()}}
 
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
@@ -356,7 +360,7 @@ class SolvisOptionsFlow(OptionsFlow):
                     reset_x = user_input.get("reset_x", 510)
                     reset_y = user_input.get("reset_y", 510)
 
-                    profiles[profile_key] = {
+                    new_profile: dict[str, Any] = {
                         "name": user_input["name"],
                         "device_group": user_input.get("device_group", "CGI Control"),
                         "icon": user_input.get("icon", "mdi:gesture-tap"),
@@ -365,6 +369,10 @@ class SolvisOptionsFlow(OptionsFlow):
                         "reset_touch": {"x": reset_x, "y": reset_y},
                         "options": options,
                     }
+                    section = user_input.get("section", "")
+                    if section:
+                        new_profile["section"] = section
+                    profiles[profile_key] = new_profile
                     return self._save_profiles(profiles)
 
         return self.async_show_form(
@@ -375,6 +383,7 @@ class SolvisOptionsFlow(OptionsFlow):
                     vol.Required("name"): str,
                     vol.Optional("device_group", default="CGI Control"): str,
                     vol.Optional("icon", default="mdi:gesture-tap"): str,
+                    vol.Optional("section", default=""): vol.In(_SECTION_OPTIONS),
                     vol.Optional("wakeup_count", default=4): vol.All(
                         int, vol.Range(min=0, max=CGI_WAKEUP_MAX)
                     ),
@@ -411,7 +420,7 @@ class SolvisOptionsFlow(OptionsFlow):
             if options is None:
                 errors["base"] = "no_options"
             else:
-                profiles[profile_key] = {
+                updated_profile: dict[str, Any] = {
                     "name": user_input["name"],
                     "device_group": user_input.get(
                         "device_group", profile.get("device_group", "CGI Control")
@@ -425,6 +434,10 @@ class SolvisOptionsFlow(OptionsFlow):
                     },
                     "options": options,
                 }
+                section = user_input.get("section", "")
+                if section:
+                    updated_profile["section"] = section
+                profiles[profile_key] = updated_profile
                 return self._save_profiles(profiles)
 
         # Pre-fill with current values
@@ -444,6 +457,10 @@ class SolvisOptionsFlow(OptionsFlow):
                         "icon",
                         default=profile.get("icon", "mdi:gesture-tap"),
                     ): str,
+                    vol.Optional(
+                        "section",
+                        default=profile.get("section", ""),
+                    ): vol.In(_SECTION_OPTIONS),
                     vol.Optional(
                         "wakeup_count",
                         default=profile.get("wakeup_count", 4),

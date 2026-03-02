@@ -22,7 +22,7 @@ from homeassistant.const import (
 )
 
 DOMAIN = "solvis_remote"
-PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.SELECT]
+PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.SELECT, Platform.IMAGE]
 
 CONF_REALM = "realm"
 CONF_SCAN_INTERVAL = "scan_interval"
@@ -40,6 +40,19 @@ CGI_WAKEUP_MAX = 10
 CGI_DELAY_MIN = 0.1
 CGI_DELAY_MAX = 5.0
 CGI_COORD_MAX = 800
+
+# CGI timing constants
+CGI_SECTION_DELAY = 0.5  # Pause after section touch (seconds)
+CGI_TOUCH_DELAY = 0.5    # Pause after option touch (seconds)
+
+# CGI menu sections (SolvisRemote hierarchical menu)
+CGI_SECTIONS: dict[str, dict] = {
+    "heizung":     {"name": "Heizung",      "x": 43,  "y": 25},
+    "wasser":      {"name": "Wasser",       "x": 47,  "y": 77},
+    "zirkulation": {"name": "Zirkulation",  "x": 49,  "y": 126},
+    "solar":       {"name": "Solar",        "x": 38,  "y": 181},
+    "sonstig":     {"name": "Sonstiges",    "x": 53,  "y": 225},
+}
 
 MANUFACTURER = "Solvis"
 MODEL = "SolvisMax"
@@ -59,6 +72,7 @@ DEFAULT_CGI_PROFILES: dict[str, dict] = {
         "name": "Heating Mode",
         "device_group": DEVICE_HEATING_CIRCUIT,
         "icon": "mdi:radiator",
+        "section": "heizung",
         "wakeup_count": 4,
         "wakeup_delay": 1.0,
         "reset_touch": {"x": 510, "y": 510},
@@ -326,3 +340,34 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[SolvisBinarySensorEntityDescription, ...] = (
         translation_key="burner",
     ),
 )
+
+
+# ---------------------------------------------------------------------------
+# Anlagenschema image overlay definitions
+# Positions are relative (0.0–1.0), scaled to image size at render time
+# ---------------------------------------------------------------------------
+
+ANLAGENSCHEMA_FONT_SIZE = 14
+
+ANLAGENSCHEMA_OVERLAYS: tuple[dict, ...] = (
+    {"key": "s10", "rel_pos": (0.443, 0.109), "format": "{v}°C", "label": "S10"},
+    {"key": "s1",  "rel_pos": (0.523, 0.196), "format": "{v}°C", "label": "S1"},
+    {"key": "s4",  "rel_pos": (0.523, 0.347), "format": "{v}°C", "label": "S4"},
+    {"key": "s9",  "rel_pos": (0.523, 0.473), "format": "{v}°C", "label": "S9"},
+    {"key": "s3",  "rel_pos": (0.523, 0.687), "format": "{v}°C", "label": "S3"},
+    {"key": "slv", "rel_pos": (0.195, 0.571), "format": "{v}kW", "label": "SL"},
+    {"key": "sev", "rel_pos": (0.195, 0.603), "format": "{v}kWh", "label": "SE"},
+    {"key": "s17", "rel_pos": (0.195, 0.635), "format": "{v}l/h", "label": "S17"},
+    {"key": "s8",  "rel_pos": (0.195, 0.667), "format": "{v}°C", "label": "S8"},
+    {"key": "s2",  "rel_pos": (0.686, 0.444), "format": "{v}°C", "label": "S2"},
+    {"key": "s11", "rel_pos": (0.686, 0.504), "format": "{v}°C", "label": "S11"},
+    {"key": "s12", "rel_pos": (0.654, 0.633), "format": "{v}°C", "label": "S12"},
+)
+
+ANLAGENSCHEMA_STATUS_OVERLAY: dict = {
+    "key": "a12",
+    "rel_pos": (0.345, 0.280),
+    "text": "A12",
+    "color_on": (220, 40, 40),
+    "color_off": (160, 160, 160),
+}

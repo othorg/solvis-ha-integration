@@ -193,3 +193,48 @@ class TestExecuteCgiSequence:
 
         mock_btn.assert_not_called()
         mock_touch.assert_called_once_with(120, 218)
+
+    def test_sequence_with_section_touch(self, client: SolvisClient) -> None:
+        """Sequence with section: Wakeup → Section-Touch → Option-Touch → Reset."""
+        sequence = {
+            "wakeup_count": 2,
+            "wakeup_delay": 0.01,
+            "section_touch": {"x": 43, "y": 25},
+            "x": 120,
+            "y": 218,
+            "reset_touch": {"x": 510, "y": 510},
+        }
+
+        with patch.object(client, "send_button_press") as mock_btn, \
+             patch.object(client, "send_touch") as mock_touch, \
+             patch("custom_components.solvis_remote.client.time.sleep"):
+            client.execute_cgi_sequence(sequence)
+
+        assert mock_btn.call_count == 2
+        # Touch calls: section + option + reset = 3
+        assert mock_touch.call_count == 3
+        touch_calls = mock_touch.call_args_list
+        assert touch_calls[0] == call(43, 25)     # section touch
+        assert touch_calls[1] == call(120, 218)    # option touch
+        assert touch_calls[2] == call(510, 510)    # reset touch
+
+    def test_sequence_without_section_touch(self, client: SolvisClient) -> None:
+        """Sequence without section_touch must skip section step (backwards compatible)."""
+        sequence = {
+            "wakeup_count": 1,
+            "wakeup_delay": 0.01,
+            "x": 315,
+            "y": 215,
+            "reset_touch": {"x": 510, "y": 510},
+        }
+
+        with patch.object(client, "send_button_press"), \
+             patch.object(client, "send_touch") as mock_touch, \
+             patch("custom_components.solvis_remote.client.time.sleep"):
+            client.execute_cgi_sequence(sequence)
+
+        # Only option + reset, no section
+        assert mock_touch.call_count == 2
+        touch_calls = mock_touch.call_args_list
+        assert touch_calls[0] == call(315, 215)    # option touch
+        assert touch_calls[1] == call(510, 510)    # reset touch

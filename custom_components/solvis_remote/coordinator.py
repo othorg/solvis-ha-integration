@@ -14,7 +14,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .client import SolvisClient, SolvisAuthError, SolvisConnectionError, SolvisPayloadError
-from .const import CONF_CGI_PROFILES, DEFAULT_CGI_PROFILES
+from .const import CGI_SECTIONS, CONF_CGI_PROFILES, DEFAULT_CGI_PROFILES
 
 logger = logging.getLogger(__name__)
 
@@ -86,9 +86,19 @@ class SolvisDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 f"Unknown option '{option_key}' in profile '{profile_key}'"
             )
 
+        section_key = profile.get("section")
+        section_touch = None
+        if section_key:
+            section_touch = CGI_SECTIONS.get(section_key)
+            if section_touch is None:
+                raise HomeAssistantError(
+                    f"Invalid CGI section '{section_key}' in profile '{profile_key}'"
+                )
+
         sequence = {
             "wakeup_count": profile["wakeup_count"],
             "wakeup_delay": profile["wakeup_delay"],
+            "section_touch": section_touch,
             "x": option["x"],
             "y": option["y"],
             "reset_touch": profile.get("reset_touch"),

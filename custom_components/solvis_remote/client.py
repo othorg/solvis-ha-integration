@@ -247,21 +247,30 @@ class SolvisClient:
         self._open_cgi(url)
 
     def execute_cgi_sequence(self, sequence: dict) -> None:
-        """Execute a complete CGI sequence: wake-up → touch → reset.
+        """Execute a complete CGI sequence: wake-up → section → touch → reset.
 
         Args:
             sequence: Dict with wakeup_count, wakeup_delay, x, y,
-                      and optional reset_touch {x, y}.
+                      optional section_touch {x, y}, and optional reset_touch {x, y}.
 
         Raises:
             SolvisAuthError: If authentication fails during any step.
             SolvisConnectionError: If a network error occurs during any step.
         """
+        from .const import CGI_SECTION_DELAY, CGI_TOUCH_DELAY
+
         for _ in range(sequence["wakeup_count"]):
             self.send_button_press()
             time.sleep(sequence["wakeup_delay"])
+
+        section = sequence.get("section_touch")
+        if section:
+            self.send_touch(section["x"], section["y"])
+            time.sleep(CGI_SECTION_DELAY)
+
         self.send_touch(sequence["x"], sequence["y"])
-        time.sleep(0.5)
+        time.sleep(CGI_TOUCH_DELAY)
+
         reset = sequence.get("reset_touch")
         if reset:
             self.send_touch(reset["x"], reset["y"])

@@ -61,6 +61,7 @@
           "name": "Anzeigename",
           "device_group": "Geraetegruppe",
           "icon": "Symbol",
+          "section": "Menuesektion",
           "wakeup_count": "Aufweck-Tastendruecke",
           "wakeup_delay": "Pause zwischen Druecken (Sekunden)",
           "reset_x": "Reset-Touch X",
@@ -75,6 +76,7 @@
           "name": "Anzeigename",
           "device_group": "Geraetegruppe",
           "icon": "Symbol",
+          "section": "Menuesektion",
           "wakeup_count": "Aufweck-Tastendruecke",
           "wakeup_delay": "Pause zwischen Druecken (Sekunden)",
           "reset_x": "Reset-Touch X",
@@ -125,6 +127,9 @@
       "heating_circuit_pump": { "name": "Heizkreispumpe" },
       "circulation_pump": { "name": "Zirkulationspumpe" },
       "burner": { "name": "Brenner" }
+    },
+    "image": {
+      "anlagenschema": { "name": "Anlagenschema" }
     }
   }
 }

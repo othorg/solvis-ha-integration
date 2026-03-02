@@ -43,6 +43,17 @@ def _make_mock_entry():
     )
 
 
+def _make_mock_entry_with_profiles(profiles: dict):
+    """Return a mock config entry with custom CGI profiles."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    return MockConfigEntry(
+        domain=DOMAIN,
+        data={"host": "192.168.1.100", "username": "admin", "password": "secret"},
+        options={CONF_CGI_PROFILES: profiles},
+    )
+
+
 class TestCoordinatorDerivedValues:
     """Test computed values (delta_s5s6, brennerleistung)."""
 
@@ -162,6 +173,63 @@ class TestCoordinatorCgiCommand:
         coordinator = SolvisDataUpdateCoordinator(hass, client, 60, "3412", entry)
         with pytest.raises(HomeAssistantError, match="Unknown option"):
             await coordinator.async_execute_cgi_command("heating_mode", "nonexistent")
+
+    async def test_execute_cgi_command_includes_section(self, hass: HomeAssistant) -> None:
+        """Test that section_touch is resolved from CGI_SECTIONS."""
+        client = MagicMock(spec=SolvisClient)
+        client.fetch_data.return_value = _make_mock_data()
+        entry = _make_mock_entry()
+        entry.add_to_hass(hass)
+
+        coordinator = SolvisDataUpdateCoordinator(hass, client, 60, "3412", entry)
+        await coordinator.async_execute_cgi_command("heating_mode", "auto")
+
+        call_args = client.execute_cgi_sequence.call_args[0][0]
+        # DEFAULT_CGI_PROFILES["heating_mode"] has section="heizung"
+        assert call_args["section_touch"] is not None
+        assert call_args["section_touch"]["x"] == 43
+        assert call_args["section_touch"]["y"] == 25
+
+    async def test_execute_cgi_command_invalid_section_raises_error(self, hass: HomeAssistant) -> None:
+        """Invalid section key must raise HomeAssistantError."""
+        client = MagicMock(spec=SolvisClient)
+        profiles = {
+            "test_profile": {
+                "name": "Test",
+                "section": "nonexistent_section",
+                "wakeup_count": 2,
+                "wakeup_delay": 1.0,
+                "reset_touch": {"x": 510, "y": 510},
+                "options": {"opt1": {"label": "Opt1", "x": 100, "y": 100}},
+            }
+        }
+        entry = _make_mock_entry_with_profiles(profiles)
+        entry.add_to_hass(hass)
+
+        coordinator = SolvisDataUpdateCoordinator(hass, client, 60, "3412", entry)
+        with pytest.raises(HomeAssistantError, match="Invalid CGI section"):
+            await coordinator.async_execute_cgi_command("test_profile", "opt1")
+
+    async def test_execute_cgi_command_no_section_legacy(self, hass: HomeAssistant) -> None:
+        """Profile without section must work (no section_touch in sequence)."""
+        client = MagicMock(spec=SolvisClient)
+        profiles = {
+            "legacy_profile": {
+                "name": "Legacy",
+                "wakeup_count": 2,
+                "wakeup_delay": 1.0,
+                "reset_touch": {"x": 510, "y": 510},
+                "options": {"opt1": {"label": "Opt1", "x": 100, "y": 100}},
+            }
+        }
+        entry = _make_mock_entry_with_profiles(profiles)
+        entry.add_to_hass(hass)
+
+        coordinator = SolvisDataUpdateCoordinator(hass, client, 60, "3412", entry)
+        await coordinator.async_execute_cgi_command("legacy_profile", "opt1")
+
+        call_args = client.execute_cgi_sequence.call_args[0][0]
+        assert call_args["section_touch"] is None
 
     async def test_execute_cgi_auth_error_triggers_reauth(self, hass: HomeAssistant) -> None:
         """Auth error during CGI must raise ConfigEntryAuthFailed."""
