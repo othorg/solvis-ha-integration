@@ -7,6 +7,7 @@ from datetime import timedelta
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .client import SolvisClient, SolvisAuthError, SolvisConnectionError, SolvisPayloadError
@@ -38,7 +39,9 @@ class SolvisDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             raw_data = await self.hass.async_add_executor_job(self.client.fetch_data)
         except SolvisAuthError as err:
-            raise UpdateFailed(f"Authentication failed: {err}") from err
+            raise ConfigEntryAuthFailed(
+                f"Authentication failed: {err}"
+            ) from err
         except SolvisConnectionError as err:
             raise UpdateFailed(f"Connection error: {err}") from err
         except SolvisPayloadError as err:

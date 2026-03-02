@@ -255,8 +255,16 @@ class SolvisClient:
         Args:
             hexstring: Hex-encoded string from the binary data stream.
             limited: If True, interpret as signed 16-bit integer.
+
+        Raises:
+            SolvisPayloadError: If hexstring contains invalid hex characters.
         """
-        raw_bytes = bytes.fromhex(hexstring)
+        try:
+            raw_bytes = bytes.fromhex(hexstring)
+        except ValueError as err:
+            raise SolvisPayloadError(
+                f"Invalid hex data: '{hexstring}'"
+            ) from err
         value = int.from_bytes(raw_bytes, byteorder="little", signed=False)
 
         if limited and value > 32767:

@@ -7,6 +7,7 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from custom_components.solvis_remote.coordinator import SolvisDataUpdateCoordinator
@@ -71,14 +72,15 @@ class TestCoordinatorDerivedValues:
 
 
 class TestCoordinatorErrors:
-    """Test that client errors are mapped to UpdateFailed."""
+    """Test that client errors are mapped correctly."""
 
-    async def test_auth_error(self, hass: HomeAssistant) -> None:
+    async def test_auth_error_triggers_reauth(self, hass: HomeAssistant) -> None:
+        """SolvisAuthError must raise ConfigEntryAuthFailed to trigger reauth."""
         client = MagicMock(spec=SolvisClient)
         client.fetch_data.side_effect = SolvisAuthError("401")
 
         coordinator = SolvisDataUpdateCoordinator(hass, client, 60, "3412")
-        with pytest.raises(UpdateFailed, match="Authentication"):
+        with pytest.raises(ConfigEntryAuthFailed, match="Authentication"):
             await coordinator._async_update_data()
 
     async def test_connection_error(self, hass: HomeAssistant) -> None:

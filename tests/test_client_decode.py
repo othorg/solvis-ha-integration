@@ -143,6 +143,10 @@ class TestConvert:
         # "E803" → b'\xe8\x03' LE → 0x03E8 = 1000
         assert self.client._convert("E803") == 1000
 
+    def test_invalid_hex_raises_payload_error(self):
+        with pytest.raises(SolvisPayloadError, match="Invalid hex data"):
+            self.client._convert("ZZZZ")
+
 
 # ---------------------------------------------------------------------------
 # Error handling tests
