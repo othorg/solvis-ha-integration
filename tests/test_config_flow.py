@@ -20,6 +20,7 @@ from custom_components.solvis_remote.const import (
 from custom_components.solvis_remote.client import (
     SolvisAuthError,
     SolvisConnectionError,
+    SolvisPayloadError,
 )
 
 
@@ -137,3 +138,56 @@ class TestOptionsFlow:
         )
         assert result["type"] is FlowResultType.CREATE_ENTRY
         assert entry.options["scan_interval"] == 120
+
+
+# ---------------------------------------------------------------------------
+# Duplicate detection tests
+# ---------------------------------------------------------------------------
+
+class TestDuplicateDetection:
+    """Test duplicate detection by system_id (not just host)."""
+
+    async def test_duplicate_same_system_id_different_host(self, hass: HomeAssistant) -> None:
+        """Same system_id via different host must be rejected."""
+        # First entry via IP
+        with _patch_fetch():
+            result = await hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": config_entries.SOURCE_USER}
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], MOCK_USER_INPUT
+            )
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+
+        # Second entry via DNS name but same system_id "3412"
+        dns_input = {**MOCK_USER_INPUT, "host": "solvis.local"}
+        with _patch_fetch():
+            result = await hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": config_entries.SOURCE_USER}
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], dns_input
+            )
+        assert result["type"] is FlowResultType.ABORT
+        assert result["reason"] == "already_configured"
+
+
+# ---------------------------------------------------------------------------
+# Payload error tests
+# ---------------------------------------------------------------------------
+
+class TestPayloadError:
+    """Test SolvisPayloadError handling in config flow."""
+
+    async def test_payload_error_shows_invalid_payload(self, hass: HomeAssistant) -> None:
+        """SolvisPayloadError must show invalid_payload error."""
+        with _patch_fetch(side_effect=SolvisPayloadError("too short")):
+            result = await hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": config_entries.SOURCE_USER}
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], MOCK_USER_INPUT
+            )
+
+        assert result["type"] is FlowResultType.FORM
+        assert result["errors"] == {"base": "invalid_payload"}

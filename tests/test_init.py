@@ -19,6 +19,7 @@ from custom_components.solvis_remote.const import (
 from custom_components.solvis_remote.client import (
     SolvisAuthError,
     SolvisConnectionError,
+    SolvisPayloadError,
 )
 
 
@@ -74,6 +75,17 @@ class TestSetupEntry:
         entry.add_to_hass(hass)
 
         with _patch_fetch(side_effect=SolvisConnectionError("timeout")):
+            await hass.config_entries.async_setup(entry.entry_id)
+            assert entry.state is ConfigEntryState.SETUP_RETRY
+
+    async def test_setup_payload_error_retries(self, hass: HomeAssistant) -> None:
+        """SolvisPayloadError during setup must trigger retry (ConfigEntryNotReady)."""
+        from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+        entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG_DATA)
+        entry.add_to_hass(hass)
+
+        with _patch_fetch(side_effect=SolvisPayloadError("too short")):
             await hass.config_entries.async_setup(entry.entry_id)
             assert entry.state is ConfigEntryState.SETUP_RETRY
 

@@ -23,7 +23,8 @@
     },
     "error": {
       "cannot_connect": "Verbindung zum Regler nicht moeglich. Host und Netzwerk pruefen.",
-      "invalid_auth": "Authentifizierung fehlgeschlagen. Benutzername und Passwort pruefen."
+      "invalid_auth": "Authentifizierung fehlgeschlagen. Benutzername und Passwort pruefen.",
+      "invalid_payload": "Regler liefert ungueltige Daten. Pruefen ob es ein unterstuetztes Solvis-Modell ist."
     },
     "abort": {
       "already_configured": "Dieser Regler ist bereits konfiguriert.",

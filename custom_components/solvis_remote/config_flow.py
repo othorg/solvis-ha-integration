@@ -11,7 +11,7 @@ from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResu
 from homeassistant.const import CONF_HOST, CONF_USERNAME, CONF_PASSWORD
 from homeassistant.core import callback
 
-from .client import SolvisClient, SolvisAuthError, SolvisConnectionError
+from .client import SolvisClient, SolvisAuthError, SolvisConnectionError, SolvisPayloadError
 from .const import (
     DOMAIN,
     CONF_REALM,
@@ -57,13 +57,17 @@ class SolvisConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            # Duplicate check by host
-            self._async_abort_entries_match({CONF_HOST: user_input[CONF_HOST]})
-
-            error = await self._test_connection(user_input)
-            if error:
-                errors["base"] = error
+            result = await self._test_connection(user_input)
+            if isinstance(result, str):
+                errors["base"] = result
             else:
+                # result is fetch_data dict — extract system_id for unique_id
+                system_raw = result.get("system", {}).get("raw", "")
+                system_id = system_raw if system_raw else user_input[CONF_HOST]
+
+                await self.async_set_unique_id(system_id)
+                self._abort_if_unique_id_configured()
+
                 return self.async_create_entry(
                     title=f"Solvis ({user_input[CONF_HOST]})",
                     data={
@@ -106,9 +110,9 @@ class SolvisConfigFlow(ConfigFlow, domain=DOMAIN):
                 CONF_PASSWORD: user_input[CONF_PASSWORD],
                 CONF_REALM: entry.data.get(CONF_REALM, DEFAULT_REALM),
             }
-            error = await self._test_connection(test_data)
-            if error:
-                errors["base"] = error
+            result = await self._test_connection(test_data)
+            if isinstance(result, str):
+                errors["base"] = result
             else:
                 return self.async_update_reload_and_abort(
                     entry,
@@ -122,10 +126,10 @@ class SolvisConfigFlow(ConfigFlow, domain=DOMAIN):
             description_placeholders={"host": entry.data[CONF_HOST]},
         )
 
-    async def _test_connection(self, data: dict[str, Any]) -> str | None:
+    async def _test_connection(self, data: dict[str, Any]) -> dict | str:
         """Test connection to the Solvis controller.
 
-        Returns an error key or None on success.
+        Returns the fetch_data dict on success, or an error key string on failure.
         """
         client = SolvisClient(
             host=data[CONF_HOST],
@@ -135,15 +139,16 @@ class SolvisConfigFlow(ConfigFlow, domain=DOMAIN):
             timeout=DEFAULT_TIMEOUT,
         )
         try:
-            await self.hass.async_add_executor_job(client.fetch_data)
+            return await self.hass.async_add_executor_job(client.fetch_data)
         except SolvisAuthError:
             return "invalid_auth"
         except SolvisConnectionError:
             return "cannot_connect"
+        except SolvisPayloadError:
+            return "invalid_payload"
         except Exception:
             logger.exception("Unexpected error during connection test")
             return "cannot_connect"
-        return None
 
     @staticmethod
     @callback

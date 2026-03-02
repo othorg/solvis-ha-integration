@@ -23,7 +23,8 @@
     },
     "error": {
       "cannot_connect": "Cannot connect to controller. Check host and network.",
-      "invalid_auth": "Authentication failed. Check username and password."
+      "invalid_auth": "Authentication failed. Check username and password.",
+      "invalid_payload": "Controller returned invalid data. Check if the device is a supported Solvis model."
     },
     "abort": {
       "already_configured": "This controller is already configured.",

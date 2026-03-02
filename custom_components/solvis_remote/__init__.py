@@ -10,7 +10,7 @@ from homeassistant.const import CONF_HOST, CONF_USERNAME, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 
-from .client import SolvisClient, SolvisAuthError, SolvisConnectionError
+from .client import SolvisClient, SolvisAuthError, SolvisConnectionError, SolvisPayloadError
 from .const import (
     CONF_REALM,
     CONF_SCAN_INTERVAL,
@@ -44,6 +44,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except SolvisConnectionError as err:
         raise ConfigEntryNotReady(
             f"Cannot connect to {entry.data[CONF_HOST]}"
+        ) from err
+    except SolvisPayloadError as err:
+        raise ConfigEntryNotReady(
+            f"Invalid payload from {entry.data[CONF_HOST]}: {err}"
         ) from err
 
     # Extract stable system identifier from the Solvis payload
