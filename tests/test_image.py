@@ -103,6 +103,33 @@ class TestImageEntityCreation:
         ]
         assert image_entities[0].translation_key == "anlagenschema"
 
+    async def test_entity_initializes_image_access_token(
+        self, hass: HomeAssistant
+    ) -> None:
+        """ImageEntity base init must provide access_token attributes."""
+        from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+        entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG_DATA)
+        entry.add_to_hass(hass)
+
+        with _patch_fetch():
+            await hass.config_entries.async_setup(entry.entry_id)
+            await hass.async_block_till_done()
+
+        ent_reg = er.async_get(hass)
+        image_entry = next(
+            e
+            for e in ent_reg.entities.values()
+            if e.domain == "image" and e.platform == DOMAIN
+        )
+        entity = hass.data["image"].get_entity(image_entry.entity_id)
+        assert entity is not None
+
+        # Regression guard for HA runtime error:
+        # AttributeError: object has no attribute 'access_tokens'
+        attrs = entity.state_attributes
+        assert "access_token" in attrs
+
 
 class TestImageRendering:
     """Test image rendering with sensor data overlays."""

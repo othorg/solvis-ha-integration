@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from functools import partial
 import logging
 import re
 from typing import Any
@@ -34,8 +35,39 @@ from .const import (
 
 logger = logging.getLogger(__name__)
 
-# Section dropdown options with explicit "None" option
-_SECTION_OPTIONS = {"": "None", **{k: v["name"] for k, v in CGI_SECTIONS.items()}}
+_MENU_LABELS: dict[str, dict[str, str]] = {
+    "en": {
+        "edit": "Edit",
+        "delete": "Delete",
+        "add": "Add new profile",
+        "back": "Back",
+        "none": "None",
+    },
+    "de": {
+        "edit": "Bearbeiten",
+        "delete": "Loeschen",
+        "add": "Neues Profil hinzufuegen",
+        "back": "Zurueck",
+        "none": "Keine",
+    },
+}
+
+_SECTION_LABELS: dict[str, dict[str, str]] = {
+    "en": {
+        "heizung": "Heating",
+        "wasser": "Water",
+        "zirkulation": "Circulation",
+        "solar": "Solar",
+        "sonstig": "Misc",
+    },
+    "de": {
+        "heizung": "Heizung",
+        "wasser": "Wasser",
+        "zirkulation": "Zirkulation",
+        "solar": "Solar",
+        "sonstig": "Sonstiges",
+    },
+}
 
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
@@ -184,14 +216,17 @@ class SolvisConfigFlow(ConfigFlow, domain=DOMAIN):
 
         Returns the fetch_data dict on success, or an error key string on failure.
         """
-        client = SolvisClient(
-            host=data[CONF_HOST],
-            username=data[CONF_USERNAME],
-            password=data[CONF_PASSWORD],
-            realm=data.get(CONF_REALM, DEFAULT_REALM),
-            timeout=DEFAULT_TIMEOUT,
-        )
         try:
+            client = await self.hass.async_add_executor_job(
+                partial(
+                    SolvisClient,
+                    host=data[CONF_HOST],
+                    username=data[CONF_USERNAME],
+                    password=data[CONF_PASSWORD],
+                    realm=data.get(CONF_REALM, DEFAULT_REALM),
+                    timeout=DEFAULT_TIMEOUT,
+                )
+            )
             return await self.hass.async_add_executor_job(client.fetch_data)
         except SolvisAuthError:
             return "invalid_auth"
@@ -216,6 +251,24 @@ class SolvisOptionsFlow(OptionsFlow):
     def __init__(self) -> None:
         """Initialize options flow."""
         self._editing_profile_key: str | None = None
+
+    def _lang(self) -> str:
+        """Return language bucket for UI labels."""
+        language = getattr(self.hass.config, "language", "en") or "en"
+        return "de" if language.startswith("de") else "en"
+
+    def _menu_label(self, key: str) -> str:
+        """Return localized static menu label."""
+        return _MENU_LABELS[self._lang()][key]
+
+    def _section_options(self) -> dict[str, str]:
+        """Return localized section dropdown options."""
+        lang = self._lang()
+        labels = _SECTION_LABELS[lang]
+        options = {"": self._menu_label("none")}
+        for key in CGI_SECTIONS:
+            options[key] = labels[key]
+        return options
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -315,13 +368,14 @@ class SolvisOptionsFlow(OptionsFlow):
         # Build selection options
         options_list: list[tuple[str, str]] = []
         for key, profile in profiles.items():
-            options_list.append((f"edit:{key}", f"Edit: {profile['name']}"))
-            options_list.append((f"delete:{key}", f"Delete: {profile['name']}"))
-        options_list.append(("__new__", "Add new profile"))
-        options_list.append(("__back__", "Back"))
-
-        schema_options = {v: v for _, v in options_list}
-        value_map = {v: k for k, v in options_list}
+            options_list.append(
+                (f"edit:{key}", f"{self._menu_label('edit')}: {profile['name']}")
+            )
+            options_list.append(
+                (f"delete:{key}", f"{self._menu_label('delete')}: {profile['name']}")
+            )
+        options_list.append(("__new__", self._menu_label("add")))
+        options_list.append(("__back__", self._menu_label("back")))
 
         return self.async_show_form(
             step_id="cgi_menu",
@@ -383,7 +437,9 @@ class SolvisOptionsFlow(OptionsFlow):
                     vol.Required("name"): str,
                     vol.Optional("device_group", default="CGI Control"): str,
                     vol.Optional("icon", default="mdi:gesture-tap"): str,
-                    vol.Optional("section", default=""): vol.In(_SECTION_OPTIONS),
+                    vol.Optional("section", default=""): vol.In(
+                        self._section_options()
+                    ),
                     vol.Optional("wakeup_count", default=4): vol.All(
                         int, vol.Range(min=0, max=CGI_WAKEUP_MAX)
                     ),
@@ -460,7 +516,7 @@ class SolvisOptionsFlow(OptionsFlow):
                     vol.Optional(
                         "section",
                         default=profile.get("section", ""),
-                    ): vol.In(_SECTION_OPTIONS),
+                    ): vol.In(self._section_options()),
                     vol.Optional(
                         "wakeup_count",
                         default=profile.get("wakeup_count", 4),

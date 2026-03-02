@@ -34,6 +34,33 @@ _BASE_IMAGE_PATH = _ASSETS_DIR / "anlagenschema_base.png"
 _FONT_PATH = _ASSETS_DIR / "DejaVuSans.ttf"
 
 
+def _load_base_image() -> Image.Image | None:
+    """Load and fully decode the base diagram image from disk."""
+    try:
+        base_image = Image.open(_BASE_IMAGE_PATH)
+        # Force full load into memory so file handle is released.
+        base_image.load()
+        return base_image
+    except (FileNotFoundError, OSError) as err:
+        logger.error("Anlagenschema base image not found: %s (%s)", _BASE_IMAGE_PATH, err)
+        return None
+
+
+def _load_font() -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    """Load configured font with fallback to Pillow default font."""
+    try:
+        return ImageFont.truetype(str(_FONT_PATH), ANLAGENSCHEMA_FONT_SIZE)
+    except (FileNotFoundError, OSError):
+        # Fallback font is intentional for minimal deployments without bundled TTF.
+        logger.debug("Anlagenschema font not found at %s, using default", _FONT_PATH)
+        return ImageFont.load_default()
+
+
+def _load_assets() -> tuple[Image.Image | None, ImageFont.FreeTypeFont | ImageFont.ImageFont]:
+    """Load all on-disk assets in one blocking function (executor only)."""
+    return _load_base_image(), _load_font()
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -41,7 +68,9 @@ async def async_setup_entry(
 ) -> None:
     """Set up the Solvis Anlagenschema image entity."""
     coordinator: SolvisDataUpdateCoordinator = entry.runtime_data
-    async_add_entities([SolvisAnlagenschema(coordinator)])
+    # Disk/font access must happen off the event loop.
+    base_image, font = await hass.async_add_executor_job(_load_assets)
+    async_add_entities([SolvisAnlagenschema(coordinator, base_image, font)])
 
 
 class SolvisAnlagenschema(
@@ -54,8 +83,17 @@ class SolvisAnlagenschema(
     _attr_has_entity_name = True
     _attr_translation_key = "anlagenschema"
 
-    def __init__(self, coordinator: SolvisDataUpdateCoordinator) -> None:
-        super().__init__(coordinator)
+    def __init__(
+        self,
+        coordinator: SolvisDataUpdateCoordinator,
+        base_image: Image.Image | None,
+        font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+    ) -> None:
+        # Both base classes need explicit init:
+        # - ImageEntity initializes access_tokens/client
+        # - CoordinatorEntity wires coordinator updates
+        ImageEntity.__init__(self, coordinator.hass)
+        CoordinatorEntity.__init__(self, coordinator)
         self._attr_unique_id = f"{coordinator.system_id}_anlagenschema"
         self._attr_image_last_updated = dt_util.utcnow()
         self._attr_device_info = DeviceInfo(
@@ -65,22 +103,9 @@ class SolvisAnlagenschema(
             model=MODEL,
         )
 
-        # Load base image (cached for lifetime of entity)
-        self._base_image: Image.Image | None = None
-        try:
-            self._base_image = Image.open(_BASE_IMAGE_PATH)
-            # Force full load into memory so file handle is released
-            self._base_image.load()
-        except (FileNotFoundError, OSError) as err:
-            logger.error("Anlagenschema base image not found: %s (%s)", _BASE_IMAGE_PATH, err)
-
-        # Load font with fallback
-        self._font: ImageFont.FreeTypeFont | ImageFont.ImageFont
-        try:
-            self._font = ImageFont.truetype(str(_FONT_PATH), ANLAGENSCHEMA_FONT_SIZE)
-        except (FileNotFoundError, OSError):
-            logger.warning("Anlagenschema font not found at %s, using default", _FONT_PATH)
-            self._font = ImageFont.load_default()
+        # Assets are loaded in async_setup_entry via executor.
+        self._base_image = base_image
+        self._font = font
 
         # Render cache
         self._render_signature: tuple | None = None

@@ -47,11 +47,11 @@ CGI_TOUCH_DELAY = 0.5    # Pause after option touch (seconds)
 
 # CGI menu sections (SolvisRemote hierarchical menu)
 CGI_SECTIONS: dict[str, dict] = {
-    "heizung":     {"name": "Heizung",      "x": 43,  "y": 25},
-    "wasser":      {"name": "Wasser",       "x": 47,  "y": 77},
-    "zirkulation": {"name": "Zirkulation",  "x": 49,  "y": 126},
-    "solar":       {"name": "Solar",        "x": 38,  "y": 181},
-    "sonstig":     {"name": "Sonstiges",    "x": 53,  "y": 225},
+    "heizung": {"x": 43, "y": 25},
+    "wasser": {"x": 47, "y": 77},
+    "zirkulation": {"x": 49, "y": 126},
+    "solar": {"x": 38, "y": 181},
+    "sonstig": {"x": 53, "y": 225},
 }
 
 MANUFACTURER = "Solvis"

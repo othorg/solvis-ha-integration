@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from functools import partial
 import logging
 
 from homeassistant.config_entries import ConfigEntry
@@ -25,12 +26,16 @@ logger = logging.getLogger(__name__)
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Solvis Heating from a config entry."""
-    client = SolvisClient(
-        host=entry.data[CONF_HOST],
-        username=entry.data[CONF_USERNAME],
-        password=entry.data[CONF_PASSWORD],
-        realm=entry.data.get(CONF_REALM, DEFAULT_REALM),
-        timeout=DEFAULT_TIMEOUT,
+    # Build urllib opener in executor to avoid blocking-loop SSL path loading.
+    client = await hass.async_add_executor_job(
+        partial(
+            SolvisClient,
+            host=entry.data[CONF_HOST],
+            username=entry.data[CONF_USERNAME],
+            password=entry.data[CONF_PASSWORD],
+            realm=entry.data.get(CONF_REALM, DEFAULT_REALM),
+            timeout=DEFAULT_TIMEOUT,
+        )
     )
 
     # Initial fetch to validate connection and extract system_id
