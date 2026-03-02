@@ -18,9 +18,9 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 import homeassistant.util.dt as dt_util
 
 from .const import (
+    ANLAGENSCHEMA_BINARY_OVERLAYS,
     ANLAGENSCHEMA_FONT_SIZE,
     ANLAGENSCHEMA_OVERLAYS,
-    ANLAGENSCHEMA_STATUS_OVERLAY,
     DOMAIN,
     MANUFACTURER,
     MODEL,
@@ -163,8 +163,9 @@ class SolvisAnlagenschema(
         for overlay in ANLAGENSCHEMA_OVERLAYS:
             entry = data.get(overlay["key"])
             snapshot[overlay["key"]] = dict(entry) if entry else {}
-        a12 = data.get(ANLAGENSCHEMA_STATUS_OVERLAY["key"])
-        snapshot[ANLAGENSCHEMA_STATUS_OVERLAY["key"]] = dict(a12) if a12 else {}
+        for status in ANLAGENSCHEMA_BINARY_OVERLAYS:
+            entry = data.get(status["key"])
+            snapshot[status["key"]] = dict(entry) if entry else {}
         return snapshot
 
     @staticmethod
@@ -179,9 +180,8 @@ class SolvisAnlagenschema(
             if isinstance(val, float):
                 val = round(val, 1)
             values.append(val)
-        values.append(
-            snapshot.get(ANLAGENSCHEMA_STATUS_OVERLAY["key"], {}).get("value")
-        )
+        for status in ANLAGENSCHEMA_BINARY_OVERLAYS:
+            values.append(snapshot.get(status["key"], {}).get("value"))
         return tuple(values)
 
     def _render_image(self, snapshot: dict[str, dict]) -> bytes:
@@ -199,7 +199,10 @@ class SolvisAnlagenschema(
             rel_x, rel_y = overlay["rel_pos"]
             pixel_pos = (int(rel_x * w), int(rel_y * h))
 
-            text = "--" if value is None else f"{overlay['format'].format(v=value)}"
+            if value is None:
+                text = f"-- {overlay['label']}"
+            else:
+                text = f"{overlay['format'].format(v=value)} {overlay['label']}"
             bbox = draw.textbbox(pixel_pos, text, font=self._font)
             pad_x = 6
             pad_y = 3
@@ -212,23 +215,30 @@ class SolvisAnlagenschema(
             draw.rectangle(bg_box, fill=(255, 255, 255, 190), outline=(90, 90, 90, 120), width=1)
             draw.text(pixel_pos, text, fill=(20, 20, 20, 255), font=self._font)
 
-        # Draw status indicator (a12 burner)
-        status = ANLAGENSCHEMA_STATUS_OVERLAY
-        a12_entry = snapshot.get(status["key"], {})
-        a12_val = a12_entry.get("value")
-        rel_x, rel_y = status["rel_pos"]
-        pixel_pos = (int(rel_x * w), int(rel_y * h))
-        color = status["color_on"] if a12_val == "on" else status["color_off"]
-        status_text = status["text"]
-        status_bbox = draw.textbbox(pixel_pos, status_text, font=self._font)
-        status_bg = (
-            status_bbox[0] - 6,
-            status_bbox[1] - 3,
-            status_bbox[2] + 6,
-            status_bbox[3] + 3,
-        )
-        draw.rectangle(status_bg, fill=(255, 255, 255, 185), outline=(90, 90, 90, 120), width=1)
-        draw.text(pixel_pos, status_text, fill=color, font=self._font)
+        # Draw binary sensor indicators (green highlight when active).
+        for status in ANLAGENSCHEMA_BINARY_OVERLAYS:
+            status_entry = snapshot.get(status["key"], {})
+            is_on = status_entry.get("value") == "on"
+            rel_x, rel_y = status["rel_pos"]
+            pixel_pos = (int(rel_x * w), int(rel_y * h))
+            status_text = status["text"]
+
+            status_bbox = draw.textbbox(pixel_pos, status_text, font=self._font)
+            status_bg = (
+                status_bbox[0] - 6,
+                status_bbox[1] - 3,
+                status_bbox[2] + 6,
+                status_bbox[3] + 3,
+            )
+            if is_on:
+                fill = (170, 235, 145, 210)
+                outline = (85, 150, 70, 220)
+            else:
+                fill = (235, 235, 235, 190)
+                outline = (120, 120, 120, 160)
+
+            draw.rectangle(status_bg, fill=fill, outline=outline, width=1)
+            draw.text(pixel_pos, status_text, fill=(55, 55, 55, 255), font=self._font)
 
         buf = BytesIO()
         img.convert("RGB").save(buf, format="PNG")

@@ -40,6 +40,10 @@ MOCK_FETCH_RESULT = {
     "s17": {"title": "Durchfluss Solar", "value": 0.0, "unit": "l/h", "raw": "0000"},
     "slv": {"title": "Aktuelle Leistung", "value": 0.0, "unit": "kW", "raw": "0000"},
     "sev": {"title": "Ertrag Solar", "value": 40919, "unit": "kWh", "raw": "9FA7"},
+    "a1": {"title": "Solarpumpe", "value": "off", "unit": None, "raw": "00"},
+    "a2": {"title": "Warmwasserpumpe", "value": "off", "unit": None, "raw": "00"},
+    "a3": {"title": "Heizkreispumpe", "value": "off", "unit": None, "raw": "00"},
+    "a5": {"title": "Zirkulationspumpe", "value": "off", "unit": None, "raw": "00"},
     "a12": {"title": "Nachheizung", "value": "on", "unit": None, "raw": "01"},
     "ao1": {"title": "Brennermodulation", "value": 50.2, "unit": None, "raw": "80"},
 }
@@ -365,6 +369,38 @@ class TestStatusIndicator:
         result_off = await entity.async_image()
         assert result_off is not None
         assert result_on != result_off
+
+    async def test_binary_indicator_change_triggers_rerender(
+        self, hass: HomeAssistant
+    ) -> None:
+        """Changing other binary indicators must affect rendered image."""
+        from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+        entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG_DATA)
+        entry.add_to_hass(hass)
+
+        with _patch_fetch():
+            await hass.config_entries.async_setup(entry.entry_id)
+            await hass.async_block_till_done()
+
+        ent_reg = er.async_get(hass)
+        image_entry = next(
+            e
+            for e in ent_reg.entities.values()
+            if e.domain == "image" and e.platform == DOMAIN
+        )
+        entity = hass.data["image"].get_entity(image_entry.entity_id)
+
+        result_before = await entity.async_image()
+
+        # Toggle solar and heating-circuit indicators to "on"
+        coordinator = entry.runtime_data
+        coordinator.data["a1"] = {**coordinator.data["a1"], "value": "on"}
+        coordinator.data["a3"] = {**coordinator.data["a3"], "value": "on"}
+
+        result_after = await entity.async_image()
+        assert result_after is not None
+        assert result_before != result_after
 
 
 

@@ -377,15 +377,15 @@ ANLAGENSCHEMA_OVERLAYS: tuple[dict, ...] = (
     {"key": "sev", "rel_pos": (0.192, 0.729), "format": "{v}kWh", "label": "SE"},
     {"key": "s17", "rel_pos": (0.192, 0.769), "format": "{v}l/h", "label": "S17"},
     {"key": "s8",  "rel_pos": (0.192, 0.809), "format": "{v}°C", "label": "S8"},
-    {"key": "s2",  "rel_pos": (0.742, 0.536), "format": "{v}°C", "label": "S2"},
-    {"key": "s11", "rel_pos": (0.742, 0.622), "format": "{v}°C", "label": "S11"},
-    {"key": "s12", "rel_pos": (0.742, 0.787), "format": "{v}°C", "label": "S12"},
+    {"key": "s2",  "rel_pos": (0.655, 0.536), "format": "{v}°C", "label": "S2"},
+    {"key": "s11", "rel_pos": (0.655, 0.622), "format": "{v}°C", "label": "S11"},
+    {"key": "s12", "rel_pos": (0.655, 0.787), "format": "{v}°C", "label": "S12"},
 )
 
-ANLAGENSCHEMA_STATUS_OVERLAY: dict = {
-    "key": "a12",
-    "rel_pos": (0.389, 0.445),
-    "text": "Nachheizung",
-    "color_on": (220, 40, 40),
-    "color_off": (160, 160, 160),
-}
+ANLAGENSCHEMA_BINARY_OVERLAYS: tuple[dict, ...] = (
+    {"key": "a12", "rel_pos": (0.389, 0.391), "text": "Nachheizung"},
+    {"key": "a1", "rel_pos": (0.192, 0.640), "text": "Solaranlage"},
+    {"key": "a2", "rel_pos": (0.655, 0.495), "text": "Warmwasser"},
+    {"key": "a5", "rel_pos": (0.655, 0.578), "text": "Zirkulation"},
+    {"key": "a3", "rel_pos": (0.655, 0.713), "text": "Heizkreis 1"},
+)
