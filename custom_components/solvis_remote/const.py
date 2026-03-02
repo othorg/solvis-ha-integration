@@ -368,24 +368,24 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[SolvisBinarySensorEntityDescription, ...] = (
 ANLAGENSCHEMA_FONT_SIZE = 14
 
 ANLAGENSCHEMA_OVERLAYS: tuple[dict, ...] = (
-    {"key": "s10", "rel_pos": (0.443, 0.109), "format": "{v}°C", "label": "S10"},
-    {"key": "s1",  "rel_pos": (0.523, 0.196), "format": "{v}°C", "label": "S1"},
-    {"key": "s4",  "rel_pos": (0.523, 0.347), "format": "{v}°C", "label": "S4"},
-    {"key": "s9",  "rel_pos": (0.523, 0.473), "format": "{v}°C", "label": "S9"},
-    {"key": "s3",  "rel_pos": (0.523, 0.687), "format": "{v}°C", "label": "S3"},
-    {"key": "slv", "rel_pos": (0.195, 0.571), "format": "{v}kW", "label": "SL"},
-    {"key": "sev", "rel_pos": (0.195, 0.603), "format": "{v}kWh", "label": "SE"},
-    {"key": "s17", "rel_pos": (0.195, 0.635), "format": "{v}l/h", "label": "S17"},
-    {"key": "s8",  "rel_pos": (0.195, 0.667), "format": "{v}°C", "label": "S8"},
-    {"key": "s2",  "rel_pos": (0.686, 0.444), "format": "{v}°C", "label": "S2"},
-    {"key": "s11", "rel_pos": (0.686, 0.504), "format": "{v}°C", "label": "S11"},
-    {"key": "s12", "rel_pos": (0.654, 0.633), "format": "{v}°C", "label": "S12"},
+    {"key": "s10", "rel_pos": (0.495, 0.100), "format": "{v}°C", "label": "S10"},
+    {"key": "s1",  "rel_pos": (0.558, 0.227), "format": "{v}°C", "label": "S1"},
+    {"key": "s4",  "rel_pos": (0.558, 0.391), "format": "{v}°C", "label": "S4"},
+    {"key": "s9",  "rel_pos": (0.558, 0.536), "format": "{v}°C", "label": "S9"},
+    {"key": "s3",  "rel_pos": (0.558, 0.936), "format": "{v}°C", "label": "S3"},
+    {"key": "slv", "rel_pos": (0.192, 0.689), "format": "{v}kW", "label": "SL"},
+    {"key": "sev", "rel_pos": (0.192, 0.729), "format": "{v}kWh", "label": "SE"},
+    {"key": "s17", "rel_pos": (0.192, 0.769), "format": "{v}l/h", "label": "S17"},
+    {"key": "s8",  "rel_pos": (0.192, 0.809), "format": "{v}°C", "label": "S8"},
+    {"key": "s2",  "rel_pos": (0.742, 0.536), "format": "{v}°C", "label": "S2"},
+    {"key": "s11", "rel_pos": (0.742, 0.622), "format": "{v}°C", "label": "S11"},
+    {"key": "s12", "rel_pos": (0.742, 0.787), "format": "{v}°C", "label": "S12"},
 )
 
 ANLAGENSCHEMA_STATUS_OVERLAY: dict = {
     "key": "a12",
-    "rel_pos": (0.345, 0.280),
-    "text": "A12",
+    "rel_pos": (0.389, 0.445),
+    "text": "Nachheizung",
     "color_on": (220, 40, 40),
     "color_off": (160, 160, 160),
 }

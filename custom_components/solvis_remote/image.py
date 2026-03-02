@@ -30,20 +30,34 @@ from .coordinator import SolvisDataUpdateCoordinator
 logger = logging.getLogger(__name__)
 
 _ASSETS_DIR = Path(__file__).parent / "assets"
-_BASE_IMAGE_PATH = _ASSETS_DIR / "anlagenschema_base.png"
+_BASE_IMAGE_CANDIDATES = (
+    _ASSETS_DIR / "anlagenschema_base.jpg",
+    _ASSETS_DIR / "anlagenschema_base.jpeg",
+    _ASSETS_DIR / "anlagenschema.jpg",
+    _ASSETS_DIR / "anlagenschema_base.png",
+)
 _FONT_PATH = _ASSETS_DIR / "DejaVuSans.ttf"
 
 
 def _load_base_image() -> Image.Image | None:
     """Load and fully decode the base diagram image from disk."""
-    try:
-        base_image = Image.open(_BASE_IMAGE_PATH)
-        # Force full load into memory so file handle is released.
-        base_image.load()
-        return base_image
-    except (FileNotFoundError, OSError) as err:
-        logger.error("Anlagenschema base image not found: %s (%s)", _BASE_IMAGE_PATH, err)
-        return None
+    for image_path in _BASE_IMAGE_CANDIDATES:
+        if not image_path.exists():
+            continue
+        try:
+            base_image = Image.open(image_path)
+            # Force full load into memory so file handle is released.
+            base_image.load()
+            logger.info("Loaded anlagenschema base image: %s", image_path.name)
+            return base_image
+        except (FileNotFoundError, OSError) as err:
+            logger.warning("Failed to load anlagenschema base image %s (%s)", image_path, err)
+
+    logger.error(
+        "No anlagenschema base image found. Tried: %s",
+        ", ".join(str(p.name) for p in _BASE_IMAGE_CANDIDATES),
+    )
+    return None
 
 
 def _load_font() -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
@@ -173,7 +187,9 @@ class SolvisAnlagenschema(
     def _render_image(self, snapshot: dict[str, dict]) -> bytes:
         """Render the diagram with sensor overlays (runs in executor)."""
         img = self._base_image.copy()  # type: ignore[union-attr]
-        draw = ImageDraw.Draw(img)
+        if img.mode != "RGBA":
+            img = img.convert("RGBA")
+        draw = ImageDraw.Draw(img, "RGBA")
         w, h = img.size
 
         # Draw sensor value overlays
@@ -183,12 +199,18 @@ class SolvisAnlagenschema(
             rel_x, rel_y = overlay["rel_pos"]
             pixel_pos = (int(rel_x * w), int(rel_y * h))
 
-            if value is None:
-                text = f"-- {overlay['label']}"
-            else:
-                text = f"{overlay['format'].format(v=value)} {overlay['label']}"
-
-            draw.text(pixel_pos, text, fill=(0, 0, 0), font=self._font)
+            text = "--" if value is None else f"{overlay['format'].format(v=value)}"
+            bbox = draw.textbbox(pixel_pos, text, font=self._font)
+            pad_x = 6
+            pad_y = 3
+            bg_box = (
+                bbox[0] - pad_x,
+                bbox[1] - pad_y,
+                bbox[2] + pad_x,
+                bbox[3] + pad_y,
+            )
+            draw.rectangle(bg_box, fill=(255, 255, 255, 190), outline=(90, 90, 90, 120), width=1)
+            draw.text(pixel_pos, text, fill=(20, 20, 20, 255), font=self._font)
 
         # Draw status indicator (a12 burner)
         status = ANLAGENSCHEMA_STATUS_OVERLAY
@@ -197,8 +219,17 @@ class SolvisAnlagenschema(
         rel_x, rel_y = status["rel_pos"]
         pixel_pos = (int(rel_x * w), int(rel_y * h))
         color = status["color_on"] if a12_val == "on" else status["color_off"]
-        draw.text(pixel_pos, status["text"], fill=color, font=self._font)
+        status_text = status["text"]
+        status_bbox = draw.textbbox(pixel_pos, status_text, font=self._font)
+        status_bg = (
+            status_bbox[0] - 6,
+            status_bbox[1] - 3,
+            status_bbox[2] + 6,
+            status_bbox[3] + 3,
+        )
+        draw.rectangle(status_bg, fill=(255, 255, 255, 185), outline=(90, 90, 90, 120), width=1)
+        draw.text(pixel_pos, status_text, fill=color, font=self._font)
 
         buf = BytesIO()
-        img.save(buf, format="PNG")
+        img.convert("RGB").save(buf, format="PNG")
         return buf.getvalue()
