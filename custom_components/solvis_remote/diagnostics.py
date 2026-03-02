@@ -8,6 +8,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 
+from .const import CONF_CGI_PROFILES, CONF_ENABLE_CGI
 from .coordinator import SolvisDataUpdateCoordinator
 
 REDACT = "****"
@@ -48,6 +49,10 @@ async def async_get_config_entry_diagnostics(
             "last_exception": str(coordinator.last_exception)
             if coordinator.last_exception
             else None,
+        },
+        "cgi_control": {
+            "enabled": entry.options.get(CONF_ENABLE_CGI, False),
+            "profiles": entry.options.get(CONF_CGI_PROFILES, {}),
         },
         "data": coordinator_data,
     }

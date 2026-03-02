@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 import voluptuous as vol
@@ -13,14 +14,21 @@ from homeassistant.core import callback
 
 from .client import SolvisClient, SolvisAuthError, SolvisConnectionError, SolvisPayloadError
 from .const import (
-    DOMAIN,
+    CGI_COORD_MAX,
+    CGI_DELAY_MAX,
+    CGI_DELAY_MIN,
+    CGI_WAKEUP_MAX,
+    CONF_CGI_PROFILES,
+    CONF_ENABLE_CGI,
     CONF_REALM,
     CONF_SCAN_INTERVAL,
+    DEFAULT_CGI_PROFILES,
     DEFAULT_REALM,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_TIMEOUT,
-    MIN_SCAN_INTERVAL,
+    DOMAIN,
     MAX_SCAN_INTERVAL,
+    MIN_SCAN_INTERVAL,
 )
 
 logger = logging.getLogger(__name__)
@@ -43,6 +51,47 @@ STEP_REAUTH_DATA_SCHEMA = vol.Schema(
         vol.Required(CONF_PASSWORD): str,
     }
 )
+
+# Regex for valid profile keys: lowercase alphanumeric + underscore
+_PROFILE_KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,49}$")
+
+
+def _parse_cgi_options(text: str) -> dict[str, dict] | None:
+    """Parse CGI options from multiline text.
+
+    Format: key:label:x:y (one per line)
+    Returns dict or None if invalid.
+    """
+    options: dict[str, dict] = {}
+    for line in text.strip().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split(":")
+        if len(parts) != 4:
+            return None
+        key, label, x_str, y_str = [p.strip() for p in parts]
+        if not key or not label:
+            return None
+        try:
+            x = int(x_str)
+            y = int(y_str)
+        except ValueError:
+            return None
+        if not (0 <= x <= CGI_COORD_MAX and 0 <= y <= CGI_COORD_MAX):
+            return None
+        if key in options:
+            return None  # Duplicate option key
+        options[key] = {"label": label, "x": x, "y": y}
+    return options if options else None
+
+
+def _options_to_text(options: dict[str, dict]) -> str:
+    """Convert CGI options dict to multiline text for editing."""
+    lines = []
+    for key, opt in options.items():
+        lines.append(f"{key}:{opt['label']}:{opt['x']}:{opt['y']}")
+    return "\n".join(lines)
 
 
 class SolvisConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -160,72 +209,47 @@ class SolvisConfigFlow(ConfigFlow, domain=DOMAIN):
 class SolvisOptionsFlow(OptionsFlow):
     """Handle options for the Solvis Heating integration."""
 
+    def __init__(self) -> None:
+        """Initialize options flow."""
+        self._editing_profile_key: str | None = None
+
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Handle the options step — connection params + scan interval."""
-        errors: dict[str, str] = {}
-
-        if user_input is not None:
-            # Validate connection with the (potentially changed) parameters
-            test_data = {
-                CONF_HOST: user_input[CONF_HOST],
-                CONF_USERNAME: user_input[CONF_USERNAME],
-                CONF_PASSWORD: user_input[CONF_PASSWORD],
-                CONF_REALM: user_input.get(CONF_REALM, DEFAULT_REALM),
-            }
-            client = SolvisClient(
-                host=test_data[CONF_HOST],
-                username=test_data[CONF_USERNAME],
-                password=test_data[CONF_PASSWORD],
-                realm=test_data[CONF_REALM],
-                timeout=DEFAULT_TIMEOUT,
-            )
-            try:
-                await self.hass.async_add_executor_job(client.fetch_data)
-            except SolvisAuthError:
-                errors["base"] = "invalid_auth"
-            except SolvisConnectionError:
-                errors["base"] = "cannot_connect"
-            except SolvisPayloadError:
-                errors["base"] = "invalid_payload"
-            except Exception:
-                logger.exception("Unexpected error during options connection test")
-                errors["base"] = "cannot_connect"
-
-            if not errors:
-                # Persist connection params in data, scan_interval in options
-                self.hass.config_entries.async_update_entry(
-                    self.config_entry,
-                    data={
-                        CONF_HOST: user_input[CONF_HOST],
-                        CONF_USERNAME: user_input[CONF_USERNAME],
-                        CONF_PASSWORD: user_input[CONF_PASSWORD],
-                        CONF_REALM: user_input.get(CONF_REALM, DEFAULT_REALM),
-                    },
-                )
-                return self.async_create_entry(
-                    data={CONF_SCAN_INTERVAL: user_input[CONF_SCAN_INTERVAL]},
-                )
-
-        # Pre-fill with current values
-        entry = self.config_entry
-        current_host = entry.data.get(CONF_HOST, "")
-        current_user = entry.data.get(CONF_USERNAME, "")
-        current_pass = entry.data.get(CONF_PASSWORD, "")
-        current_realm = entry.data.get(CONF_REALM, DEFAULT_REALM)
-        current_interval = entry.options.get(
-            CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
+        """Show the options menu."""
+        return self.async_show_menu(
+            step_id="init",
+            menu_options=["settings", "cgi_menu"],
         )
 
+    # ------------------------------------------------------------------
+    # Settings step (scan_interval + enable_cgi_control)
+    # ------------------------------------------------------------------
+
+    async def async_step_settings(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle scan interval and CGI enable toggle."""
+        if user_input is not None:
+            # Preserve existing CGI profiles (never persist None)
+            existing_profiles = self.config_entry.options.get(CONF_CGI_PROFILES)
+            data: dict[str, Any] = {
+                CONF_SCAN_INTERVAL: user_input[CONF_SCAN_INTERVAL],
+                CONF_ENABLE_CGI: user_input.get(CONF_ENABLE_CGI, False),
+            }
+            if existing_profiles is not None:
+                data[CONF_CGI_PROFILES] = existing_profiles
+            return self.async_create_entry(data=data)
+
+        current_interval = self.config_entry.options.get(
+            CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
+        )
+        current_enable_cgi = self.config_entry.options.get(CONF_ENABLE_CGI, False)
+
         return self.async_show_form(
-            step_id="init",
+            step_id="settings",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_HOST, default=current_host): str,
-                    vol.Required(CONF_USERNAME, default=current_user): str,
-                    vol.Required(CONF_PASSWORD, default=current_pass): str,
-                    vol.Optional(CONF_REALM, default=current_realm): str,
                     vol.Optional(
                         CONF_SCAN_INTERVAL,
                         default=current_interval,
@@ -233,7 +257,242 @@ class SolvisOptionsFlow(OptionsFlow):
                         int,
                         vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL),
                     ),
+                    vol.Optional(
+                        CONF_ENABLE_CGI,
+                        default=current_enable_cgi,
+                    ): bool,
+                }
+            ),
+        )
+
+    # ------------------------------------------------------------------
+    # CGI profile management
+    # ------------------------------------------------------------------
+
+    def _get_profiles(self) -> dict[str, dict]:
+        """Get current CGI profiles (from options or fallback)."""
+        return dict(
+            self.config_entry.options.get(CONF_CGI_PROFILES, DEFAULT_CGI_PROFILES)
+        )
+
+    def _save_profiles(self, profiles: dict[str, dict]) -> ConfigFlowResult:
+        """Save CGI profiles and return create_entry result."""
+        return self.async_create_entry(
+            data={
+                CONF_SCAN_INTERVAL: self.config_entry.options.get(
+                    CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
+                ),
+                CONF_ENABLE_CGI: self.config_entry.options.get(
+                    CONF_ENABLE_CGI, False
+                ),
+                CONF_CGI_PROFILES: profiles,
+            },
+        )
+
+    async def async_step_cgi_menu(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show CGI profile management menu."""
+        profiles = self._get_profiles()
+
+        if user_input is not None:
+            selected = user_input.get("profile")
+            if selected == "__new__":
+                return await self.async_step_cgi_add()
+            if selected == "__back__":
+                return await self.async_step_init()
+            if selected and selected.startswith("edit:"):
+                self._editing_profile_key = selected[5:]
+                return await self.async_step_cgi_edit()
+            if selected and selected.startswith("delete:"):
+                self._editing_profile_key = selected[7:]
+                return await self.async_step_cgi_delete()
+
+        # Build selection options
+        options_list: list[tuple[str, str]] = []
+        for key, profile in profiles.items():
+            options_list.append((f"edit:{key}", f"Edit: {profile['name']}"))
+            options_list.append((f"delete:{key}", f"Delete: {profile['name']}"))
+        options_list.append(("__new__", "Add new profile"))
+        options_list.append(("__back__", "Back"))
+
+        schema_options = {v: v for _, v in options_list}
+        value_map = {v: k for k, v in options_list}
+
+        return self.async_show_form(
+            step_id="cgi_menu",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("profile"): vol.In(
+                        {k: label for k, label in options_list}
+                    ),
+                }
+            ),
+        )
+
+    async def async_step_cgi_add(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Add a new CGI profile."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            profile_key = user_input["profile_key"].strip().lower()
+            profiles = self._get_profiles()
+
+            # Validate key
+            if not _PROFILE_KEY_RE.match(profile_key):
+                errors["base"] = "invalid_profile"
+            elif profile_key in profiles:
+                errors["base"] = "duplicate_key"
+            else:
+                # Parse options
+                options = _parse_cgi_options(user_input["options_text"])
+                if options is None:
+                    errors["base"] = "no_options"
+                else:
+                    wakeup_count = user_input.get("wakeup_count", 4)
+                    wakeup_delay = user_input.get("wakeup_delay", 1.0)
+                    reset_x = user_input.get("reset_x", 510)
+                    reset_y = user_input.get("reset_y", 510)
+
+                    profiles[profile_key] = {
+                        "name": user_input["name"],
+                        "device_group": user_input.get("device_group", "CGI Control"),
+                        "icon": user_input.get("icon", "mdi:gesture-tap"),
+                        "wakeup_count": wakeup_count,
+                        "wakeup_delay": wakeup_delay,
+                        "reset_touch": {"x": reset_x, "y": reset_y},
+                        "options": options,
+                    }
+                    return self._save_profiles(profiles)
+
+        return self.async_show_form(
+            step_id="cgi_add",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("profile_key"): str,
+                    vol.Required("name"): str,
+                    vol.Optional("device_group", default="CGI Control"): str,
+                    vol.Optional("icon", default="mdi:gesture-tap"): str,
+                    vol.Optional("wakeup_count", default=4): vol.All(
+                        int, vol.Range(min=0, max=CGI_WAKEUP_MAX)
+                    ),
+                    vol.Optional("wakeup_delay", default=1.0): vol.All(
+                        vol.Coerce(float),
+                        vol.Range(min=CGI_DELAY_MIN, max=CGI_DELAY_MAX),
+                    ),
+                    vol.Optional("reset_x", default=510): vol.All(
+                        int, vol.Range(min=0, max=CGI_COORD_MAX)
+                    ),
+                    vol.Optional("reset_y", default=510): vol.All(
+                        int, vol.Range(min=0, max=CGI_COORD_MAX)
+                    ),
+                    vol.Required("options_text"): str,
                 }
             ),
             errors=errors,
+            description_placeholders={
+                "options_format": "key:label:x:y (one per line)",
+            },
+        )
+
+    async def async_step_cgi_edit(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Edit an existing CGI profile (key is immutable)."""
+        errors: dict[str, str] = {}
+        profile_key = self._editing_profile_key
+        profiles = self._get_profiles()
+        profile = profiles.get(profile_key, {})
+
+        if user_input is not None:
+            options = _parse_cgi_options(user_input["options_text"])
+            if options is None:
+                errors["base"] = "no_options"
+            else:
+                profiles[profile_key] = {
+                    "name": user_input["name"],
+                    "device_group": user_input.get(
+                        "device_group", profile.get("device_group", "CGI Control")
+                    ),
+                    "icon": user_input.get("icon", profile.get("icon", "mdi:gesture-tap")),
+                    "wakeup_count": user_input.get("wakeup_count", 4),
+                    "wakeup_delay": user_input.get("wakeup_delay", 1.0),
+                    "reset_touch": {
+                        "x": user_input.get("reset_x", 510),
+                        "y": user_input.get("reset_y", 510),
+                    },
+                    "options": options,
+                }
+                return self._save_profiles(profiles)
+
+        # Pre-fill with current values
+        current_options_text = _options_to_text(profile.get("options", {}))
+        reset = profile.get("reset_touch", {"x": 510, "y": 510})
+
+        return self.async_show_form(
+            step_id="cgi_edit",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("name", default=profile.get("name", "")): str,
+                    vol.Optional(
+                        "device_group",
+                        default=profile.get("device_group", "CGI Control"),
+                    ): str,
+                    vol.Optional(
+                        "icon",
+                        default=profile.get("icon", "mdi:gesture-tap"),
+                    ): str,
+                    vol.Optional(
+                        "wakeup_count",
+                        default=profile.get("wakeup_count", 4),
+                    ): vol.All(int, vol.Range(min=0, max=CGI_WAKEUP_MAX)),
+                    vol.Optional(
+                        "wakeup_delay",
+                        default=profile.get("wakeup_delay", 1.0),
+                    ): vol.All(
+                        vol.Coerce(float),
+                        vol.Range(min=CGI_DELAY_MIN, max=CGI_DELAY_MAX),
+                    ),
+                    vol.Optional("reset_x", default=reset.get("x", 510)): vol.All(
+                        int, vol.Range(min=0, max=CGI_COORD_MAX)
+                    ),
+                    vol.Optional("reset_y", default=reset.get("y", 510)): vol.All(
+                        int, vol.Range(min=0, max=CGI_COORD_MAX)
+                    ),
+                    vol.Required("options_text", default=current_options_text): str,
+                }
+            ),
+            errors=errors,
+            description_placeholders={
+                "profile_key": profile_key,
+                "options_format": "key:label:x:y (one per line)",
+            },
+        )
+
+    async def async_step_cgi_delete(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Delete a CGI profile."""
+        profile_key = self._editing_profile_key
+        profiles = self._get_profiles()
+        profile = profiles.get(profile_key, {})
+
+        if user_input is not None:
+            if user_input.get("confirm"):
+                profiles.pop(profile_key, None)
+                return self._save_profiles(profiles)
+            return await self.async_step_cgi_menu()
+
+        return self.async_show_form(
+            step_id="cgi_delete",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("confirm", default=False): bool,
+                }
+            ),
+            description_placeholders={
+                "profile_name": profile.get("name", profile_key),
+            },
         )

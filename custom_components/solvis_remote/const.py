@@ -22,16 +22,24 @@ from homeassistant.const import (
 )
 
 DOMAIN = "solvis_remote"
-PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
+PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.SELECT]
 
 CONF_REALM = "realm"
 CONF_SCAN_INTERVAL = "scan_interval"
+CONF_CGI_PROFILES = "cgi_profiles"
+CONF_ENABLE_CGI = "enable_cgi_control"
 
 DEFAULT_REALM = "SolvisRemote"
 DEFAULT_SCAN_INTERVAL = 60  # seconds
 DEFAULT_TIMEOUT = 10  # seconds
 MIN_SCAN_INTERVAL = 10
 MAX_SCAN_INTERVAL = 600
+
+# CGI profile validation limits
+CGI_WAKEUP_MAX = 10
+CGI_DELAY_MIN = 0.1
+CGI_DELAY_MAX = 5.0
+CGI_COORD_MAX = 800
 
 MANUFACTURER = "Solvis"
 MODEL = "SolvisMax"
@@ -41,6 +49,27 @@ DEVICE_SOLAR = "Solaranlage"
 DEVICE_BOILER = "Kessel"
 DEVICE_HEATING_CIRCUIT = "Heizkreis 1"
 DEVICE_HOT_WATER = "Warmwasser"
+
+# ---------------------------------------------------------------------------
+# Default CGI command profiles (used as fallback when not yet persisted)
+# ---------------------------------------------------------------------------
+
+DEFAULT_CGI_PROFILES: dict[str, dict] = {
+    "heating_mode": {
+        "name": "Heating Mode",
+        "device_group": DEVICE_HEATING_CIRCUIT,
+        "icon": "mdi:radiator",
+        "wakeup_count": 4,
+        "wakeup_delay": 1.0,
+        "reset_touch": {"x": 510, "y": 510},
+        "options": {
+            "off": {"label": "Off", "x": 315, "y": 215},
+            "auto": {"label": "Auto", "x": 120, "y": 218},
+            "day": {"label": "Day", "x": 188, "y": 220},
+            "night": {"label": "Night", "x": 253, "y": 215},
+        },
+    },
+}
 
 
 # ---------------------------------------------------------------------------

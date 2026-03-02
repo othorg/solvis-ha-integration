@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import random
+import time
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -200,6 +201,74 @@ class SolvisClient:
         """Build URL with cache-busting dummy parameter."""
         dummy = random.randint(10000000, 99999999)
         return f"{self.PROTOCOL}://{self.host}/{self.PATH}?dummy={dummy}"
+
+    # ------------------------------------------------------------------
+    # CGI control methods
+    # ------------------------------------------------------------------
+
+    def _open_cgi(self, url: str) -> None:
+        """HTTP GET with response cleanup and error handling (shared helper).
+
+        Raises:
+            SolvisAuthError: HTTP 401/403.
+            SolvisConnectionError: Network or timeout error.
+        """
+        try:
+            with self._opener.open(url, timeout=self.timeout) as resp:
+                resp.read()
+        except urllib.error.HTTPError as err:
+            if err.code in (401, 403):
+                raise SolvisAuthError(
+                    f"CGI auth failed on {self.host} (HTTP {err.code})"
+                ) from err
+            raise SolvisConnectionError(
+                f"CGI HTTP error {err.code} from {self.host}"
+            ) from err
+        except urllib.error.URLError as err:
+            raise SolvisConnectionError(
+                f"CGI connection error to {self.host}: {err.reason}"
+            ) from err
+        except TimeoutError as err:
+            raise SolvisConnectionError(
+                f"CGI timeout connecting to {self.host}"
+            ) from err
+
+    def send_button_press(self, button: str = "links") -> None:
+        """Send a button press via Taster.CGI (display wake-up)."""
+        url = (
+            f"{self.PROTOCOL}://{self.host}"
+            f"/Taster.CGI?taste={button}&i={random.randint(10000, 99999)}"
+        )
+        self._open_cgi(url)
+
+    def send_touch(self, x: int, y: int) -> None:
+        """Send a touch event via Touch.CGI."""
+        url = f"{self.PROTOCOL}://{self.host}/Touch.CGI?x={x}&y={y}"
+        self._open_cgi(url)
+
+    def execute_cgi_sequence(self, sequence: dict) -> None:
+        """Execute a complete CGI sequence: wake-up → touch → reset.
+
+        Args:
+            sequence: Dict with wakeup_count, wakeup_delay, x, y,
+                      and optional reset_touch {x, y}.
+
+        Raises:
+            SolvisAuthError: If authentication fails during any step.
+            SolvisConnectionError: If a network error occurs during any step.
+        """
+        for _ in range(sequence["wakeup_count"]):
+            self.send_button_press()
+            time.sleep(sequence["wakeup_delay"])
+        self.send_touch(sequence["x"], sequence["y"])
+        time.sleep(0.5)
+        reset = sequence.get("reset_touch")
+        if reset:
+            self.send_touch(reset["x"], reset["y"])
+
+    # ------------------------------------------------------------------
+    # Data fetch
+    # ------------------------------------------------------------------
 
     def fetch_data(self) -> dict[str, dict]:
         """Fetch and return decoded sensor data from the controller.

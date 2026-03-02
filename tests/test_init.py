@@ -12,9 +12,12 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 
 from custom_components.solvis_remote.const import (
-    DOMAIN,
+    CONF_CGI_PROFILES,
+    CONF_ENABLE_CGI,
     CONF_SCAN_INTERVAL,
+    DEFAULT_CGI_PROFILES,
     DEFAULT_SCAN_INTERVAL,
+    DOMAIN,
 )
 from custom_components.solvis_remote.client import (
     SolvisAuthError,
@@ -112,10 +115,10 @@ class TestSetupEntry:
 
 
 class TestUpdateListener:
-    """Test options update listener."""
+    """Test options update listener (triggers full reload)."""
 
-    async def test_scan_interval_update(self, hass: HomeAssistant) -> None:
-        """Changing scan_interval via options must update coordinator interval."""
+    async def test_options_update_reloads_entry(self, hass: HomeAssistant) -> None:
+        """Changing options must trigger a full reload of the integration."""
         from pytest_homeassistant_custom_component.common import MockConfigEntry
 
         entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG_DATA)
@@ -125,20 +128,22 @@ class TestUpdateListener:
             await hass.config_entries.async_setup(entry.entry_id)
             await hass.async_block_till_done()
 
-        coordinator = entry.runtime_data
-        assert coordinator.update_interval == timedelta(seconds=DEFAULT_SCAN_INTERVAL)
+        assert entry.state is ConfigEntryState.LOADED
+        old_coordinator = entry.runtime_data
 
-        # Simulate options update
+        # Simulate options update (triggers _async_update_listener → reload)
         with _patch_fetch():
             hass.config_entries.async_update_entry(
                 entry, options={CONF_SCAN_INTERVAL: 120}
             )
             await hass.async_block_till_done()
 
-        assert coordinator.update_interval == timedelta(seconds=120)
+        # After reload, a new coordinator is created
+        assert entry.state is ConfigEntryState.LOADED
+        assert entry.runtime_data is not old_coordinator
 
-    async def test_connection_params_update(self, hass: HomeAssistant) -> None:
-        """Changing host/credentials via data must recreate the client."""
+    async def test_scan_interval_applied_after_reload(self, hass: HomeAssistant) -> None:
+        """New scan_interval must be applied after reload."""
         from pytest_homeassistant_custom_component.common import MockConfigEntry
 
         entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG_DATA)
@@ -148,18 +153,14 @@ class TestUpdateListener:
             await hass.config_entries.async_setup(entry.entry_id)
             await hass.async_block_till_done()
 
-        coordinator = entry.runtime_data
-        old_client = coordinator.client
-        assert old_client.host == "192.168.1.100"
+        assert entry.runtime_data.update_interval == timedelta(seconds=DEFAULT_SCAN_INTERVAL)
 
-        # Simulate data + options update (as the options flow does)
-        new_data = {**MOCK_CONFIG_DATA, "host": "10.0.0.50"}
+        # Update scan interval
         with _patch_fetch():
             hass.config_entries.async_update_entry(
-                entry, data=new_data, options={CONF_SCAN_INTERVAL: DEFAULT_SCAN_INTERVAL}
+                entry, options={CONF_SCAN_INTERVAL: 120}
             )
             await hass.async_block_till_done()
 
-        # The listener must have replaced the client
-        assert coordinator.client is not old_client
-        assert coordinator.client.host == "10.0.0.50"
+        # New coordinator should have the updated interval
+        assert entry.runtime_data.update_interval == timedelta(seconds=120)

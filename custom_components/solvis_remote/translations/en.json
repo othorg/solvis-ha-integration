@@ -34,21 +34,66 @@
   "options": {
     "step": {
       "init": {
-        "title": "Solvis Heating Settings",
-        "description": "Update connection parameters and polling interval.",
+        "title": "Solvis Heating Options",
+        "menu_options": {
+          "settings": "Settings",
+          "cgi_menu": "CGI profile management"
+        }
+      },
+      "settings": {
+        "title": "Settings",
         "data": {
-          "host": "Host",
-          "username": "Username",
-          "password": "Password",
-          "realm": "Realm",
-          "scan_interval": "Scan interval (seconds)"
+          "scan_interval": "Scan interval (seconds)",
+          "enable_cgi_control": "Enable CGI touch control"
+        }
+      },
+      "cgi_menu": {
+        "title": "CGI Profile Management",
+        "data": {
+          "profile": "Select action"
+        }
+      },
+      "cgi_add": {
+        "title": "Add CGI Profile",
+        "description": "Options format: {options_format}",
+        "data": {
+          "profile_key": "Profile key (immutable)",
+          "name": "Display name",
+          "device_group": "Device group",
+          "icon": "Icon",
+          "wakeup_count": "Wake-up presses",
+          "wakeup_delay": "Delay between presses (seconds)",
+          "reset_x": "Reset touch X",
+          "reset_y": "Reset touch Y",
+          "options_text": "Options (key:label:x:y per line)"
+        }
+      },
+      "cgi_edit": {
+        "title": "Edit CGI Profile",
+        "description": "Profile key: {profile_key}\nOptions format: {options_format}",
+        "data": {
+          "name": "Display name",
+          "device_group": "Device group",
+          "icon": "Icon",
+          "wakeup_count": "Wake-up presses",
+          "wakeup_delay": "Delay between presses (seconds)",
+          "reset_x": "Reset touch X",
+          "reset_y": "Reset touch Y",
+          "options_text": "Options (key:label:x:y per line)"
+        }
+      },
+      "cgi_delete": {
+        "title": "Delete CGI Profile",
+        "description": "Delete profile \"{profile_name}\"?",
+        "data": {
+          "confirm": "Confirm deletion"
         }
       }
     },
     "error": {
-      "cannot_connect": "Cannot connect to controller. Check host and network.",
-      "invalid_auth": "Authentication failed. Check username and password.",
-      "invalid_payload": "Controller returned invalid data. Check if the device is a supported Solvis model."
+      "invalid_profile": "Invalid profile key. Use lowercase letters, numbers, and underscores.",
+      "duplicate_key": "A profile with this key already exists.",
+      "no_options": "Invalid options. Use format: key:label:x:y (one per line, coordinates 0-800)."
     }
   },
   "entity": {

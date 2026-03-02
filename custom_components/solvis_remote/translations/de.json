@@ -34,21 +34,66 @@
   "options": {
     "step": {
       "init": {
-        "title": "Solvis Heizung Einstellungen",
-        "description": "Verbindungsparameter und Abfrageintervall anpassen.",
+        "title": "Solvis Heizung Optionen",
+        "menu_options": {
+          "settings": "Einstellungen",
+          "cgi_menu": "CGI-Profile verwalten"
+        }
+      },
+      "settings": {
+        "title": "Einstellungen",
         "data": {
-          "host": "Host",
-          "username": "Benutzername",
-          "password": "Passwort",
-          "realm": "Realm",
-          "scan_interval": "Abfrageintervall (Sekunden)"
+          "scan_interval": "Abfrageintervall (Sekunden)",
+          "enable_cgi_control": "CGI-Touchsteuerung aktivieren"
+        }
+      },
+      "cgi_menu": {
+        "title": "CGI-Profilverwaltung",
+        "data": {
+          "profile": "Aktion waehlen"
+        }
+      },
+      "cgi_add": {
+        "title": "CGI-Profil hinzufuegen",
+        "description": "Optionen-Format: {options_format}",
+        "data": {
+          "profile_key": "Profilschluessel (unveraenderlich)",
+          "name": "Anzeigename",
+          "device_group": "Geraetegruppe",
+          "icon": "Symbol",
+          "wakeup_count": "Aufweck-Tastendruecke",
+          "wakeup_delay": "Pause zwischen Druecken (Sekunden)",
+          "reset_x": "Reset-Touch X",
+          "reset_y": "Reset-Touch Y",
+          "options_text": "Optionen (key:label:x:y pro Zeile)"
+        }
+      },
+      "cgi_edit": {
+        "title": "CGI-Profil bearbeiten",
+        "description": "Profilschluessel: {profile_key}\nOptionen-Format: {options_format}",
+        "data": {
+          "name": "Anzeigename",
+          "device_group": "Geraetegruppe",
+          "icon": "Symbol",
+          "wakeup_count": "Aufweck-Tastendruecke",
+          "wakeup_delay": "Pause zwischen Druecken (Sekunden)",
+          "reset_x": "Reset-Touch X",
+          "reset_y": "Reset-Touch Y",
+          "options_text": "Optionen (key:label:x:y pro Zeile)"
+        }
+      },
+      "cgi_delete": {
+        "title": "CGI-Profil loeschen",
+        "description": "Profil \"{profile_name}\" loeschen?",
+        "data": {
+          "confirm": "Loeschung bestaetigen"
         }
       }
     },
     "error": {
-      "cannot_connect": "Verbindung zum Regler nicht moeglich. Host und Netzwerk pruefen.",
-      "invalid_auth": "Authentifizierung fehlgeschlagen. Benutzername und Passwort pruefen.",
-      "invalid_payload": "Regler liefert ungueltige Daten. Pruefen ob es ein unterstuetztes Solvis-Modell ist."
+      "invalid_profile": "Ungueltiger Profilschluessel. Kleinbuchstaben, Zahlen und Unterstriche verwenden.",
+      "duplicate_key": "Ein Profil mit diesem Schluessel existiert bereits.",
+      "no_options": "Ungueltige Optionen. Format: key:label:x:y (eine pro Zeile, Koordinaten 0-800)."
     }
   },
   "entity": {

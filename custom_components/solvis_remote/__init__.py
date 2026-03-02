@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_USERNAME, CONF_PASSWORD
@@ -55,7 +54,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     system_id = system_raw if system_raw else entry.data[CONF_HOST]
 
     scan_interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
-    coordinator = SolvisDataUpdateCoordinator(hass, client, scan_interval, system_id)
+    coordinator = SolvisDataUpdateCoordinator(
+        hass, client, scan_interval, system_id, entry
+    )
     await coordinator.async_config_entry_first_refresh()
 
     entry.runtime_data = coordinator
@@ -71,18 +72,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Handle options/data update — update client, adjust interval, refresh."""
-    coordinator: SolvisDataUpdateCoordinator = entry.runtime_data
+    """Handle options update — reload the integration.
 
-    # Update client with (potentially changed) connection parameters
-    coordinator.client = SolvisClient(
-        host=entry.data[CONF_HOST],
-        username=entry.data[CONF_USERNAME],
-        password=entry.data[CONF_PASSWORD],
-        realm=entry.data.get(CONF_REALM, DEFAULT_REALM),
-        timeout=DEFAULT_TIMEOUT,
-    )
-
-    new_interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
-    coordinator.update_interval = timedelta(seconds=new_interval)
-    await coordinator.async_request_refresh()
+    A full reload is required because CGI profile changes may add or
+    remove select entities, which requires a complete platform teardown
+    and re-setup.
+    """
+    await hass.config_entries.async_reload(entry.entry_id)

@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time as time_mod
 from datetime import timedelta
 from typing import Any
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .client import SolvisClient, SolvisAuthError, SolvisConnectionError, SolvisPayloadError
+from .const import CONF_CGI_PROFILES, DEFAULT_CGI_PROFILES
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +28,7 @@ class SolvisDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         client: SolvisClient,
         scan_interval: int,
         system_id: str,
+        config_entry: ConfigEntry,
     ) -> None:
         super().__init__(
             hass,
@@ -33,19 +38,23 @@ class SolvisDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.client = client
         self.system_id = system_id
+        self.config_entry = config_entry
+        self._command_lock = asyncio.Lock()
+        self._last_command_time: float = 0
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from the controller and compute derived values."""
-        try:
-            raw_data = await self.hass.async_add_executor_job(self.client.fetch_data)
-        except SolvisAuthError as err:
-            raise ConfigEntryAuthFailed(
-                f"Authentication failed: {err}"
-            ) from err
-        except SolvisConnectionError as err:
-            raise UpdateFailed(f"Connection error: {err}") from err
-        except SolvisPayloadError as err:
-            raise UpdateFailed(f"Invalid payload: {err}") from err
+        async with self._command_lock:
+            try:
+                raw_data = await self.hass.async_add_executor_job(self.client.fetch_data)
+            except SolvisAuthError as err:
+                raise ConfigEntryAuthFailed(
+                    f"Authentication failed: {err}"
+                ) from err
+            except SolvisConnectionError as err:
+                raise UpdateFailed(f"Connection error: {err}") from err
+            except SolvisPayloadError as err:
+                raise UpdateFailed(f"Invalid payload: {err}") from err
 
         # Compute derived values
         data: dict[str, Any] = {}
@@ -54,6 +63,52 @@ class SolvisDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         self._compute_derived(data)
         return data
+
+    async def async_execute_cgi_command(
+        self, profile_key: str, option_key: str
+    ) -> None:
+        """Execute a CGI command sequence for the given profile and option.
+
+        Raises:
+            HomeAssistantError: If profile or option is unknown.
+            ConfigEntryAuthFailed: If authentication fails (triggers reauth).
+            SolvisConnectionError: If a network error occurs.
+        """
+        profiles = self.config_entry.options.get(
+            CONF_CGI_PROFILES, DEFAULT_CGI_PROFILES
+        )
+        profile = profiles.get(profile_key)
+        if profile is None:
+            raise HomeAssistantError(f"Unknown CGI profile: {profile_key}")
+        option = profile["options"].get(option_key)
+        if option is None:
+            raise HomeAssistantError(
+                f"Unknown option '{option_key}' in profile '{profile_key}'"
+            )
+
+        sequence = {
+            "wakeup_count": profile["wakeup_count"],
+            "wakeup_delay": profile["wakeup_delay"],
+            "x": option["x"],
+            "y": option["y"],
+            "reset_touch": profile.get("reset_touch"),
+        }
+
+        async with self._command_lock:
+            # Cooldown: at least 500ms since last command
+            now = time_mod.monotonic()
+            elapsed = now - self._last_command_time
+            if elapsed < 0.5:
+                await asyncio.sleep(0.5 - elapsed)
+            try:
+                await self.hass.async_add_executor_job(
+                    self.client.execute_cgi_sequence, sequence
+                )
+            except SolvisAuthError as err:
+                raise ConfigEntryAuthFailed(
+                    f"CGI auth failed: {err}"
+                ) from err
+            self._last_command_time = time_mod.monotonic()
 
     def _compute_derived(self, data: dict[str, Any]) -> None:
         """Add computed sensors (delta_s5s6, brennerleistung) to data dict."""
