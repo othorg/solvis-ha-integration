@@ -332,3 +332,103 @@ class TestCgiSectionField:
 
         schema_keys = [str(k) for k in result["data_schema"].schema.keys()]
         assert "section" in schema_keys
+
+
+# ---------------------------------------------------------------------------
+# target_device field tests
+# ---------------------------------------------------------------------------
+
+class TestTargetDeviceField:
+    """Test the target_device dropdown in CGI profile add/edit forms."""
+
+    async def _create_entry(self, hass: HomeAssistant):
+        """Helper: create a config entry via the config flow."""
+        with _patch_fetch():
+            result = await hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": config_entries.SOURCE_USER}
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], MOCK_USER_INPUT
+            )
+        return result["result"]
+
+    async def test_cgi_add_with_target_device(self, hass: HomeAssistant) -> None:
+        """Adding a profile with explicit target_device stores it."""
+        entry = await self._create_entry(hass)
+
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "cgi_menu"}
+        )
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"profile": "__new__"}
+        )
+        assert result["step_id"] == "cgi_add"
+
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            {
+                "profile_key": "test_ww",
+                "name": "WW Mode",
+                "target_device": "hot_water",
+                "section": "wasser",
+                "options_text": "on:On:100:100\noff:Off:200:200",
+            },
+        )
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+        profiles = entry.options[CONF_CGI_PROFILES]
+        assert profiles["test_ww"]["target_device"] == "hot_water"
+
+    async def test_cgi_add_default_auto(self, hass: HomeAssistant) -> None:
+        """Adding a profile without specifying target_device defaults to auto."""
+        entry = await self._create_entry(hass)
+
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "cgi_menu"}
+        )
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"profile": "__new__"}
+        )
+
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            {
+                "profile_key": "test_default",
+                "name": "Default Mode",
+                "options_text": "on:On:100:100\noff:Off:200:200",
+            },
+        )
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+        profiles = entry.options[CONF_CGI_PROFILES]
+        assert profiles["test_default"]["target_device"] == "auto"
+
+    async def test_target_device_in_schema(self, hass: HomeAssistant) -> None:
+        """CGI add form must include target_device field in schema."""
+        entry = await self._create_entry(hass)
+
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "cgi_menu"}
+        )
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"profile": "__new__"}
+        )
+
+        schema_keys = [str(k) for k in result["data_schema"].schema.keys()]
+        assert "target_device" in schema_keys
+
+    async def test_device_group_not_in_schema(self, hass: HomeAssistant) -> None:
+        """CGI add form must NOT include old device_group field."""
+        entry = await self._create_entry(hass)
+
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "cgi_menu"}
+        )
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"profile": "__new__"}
+        )
+
+        schema_keys = [str(k) for k in result["data_schema"].schema.keys()]
+        assert "device_group" not in schema_keys

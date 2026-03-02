@@ -31,6 +31,7 @@ from .const import (
     DOMAIN,
     MAX_SCAN_INTERVAL,
     MIN_SCAN_INTERVAL,
+    TARGET_DEVICE_OPTIONS,
 )
 
 logger = logging.getLogger(__name__)
@@ -66,6 +67,23 @@ _SECTION_LABELS: dict[str, dict[str, str]] = {
         "zirkulation": "Zirkulation",
         "solar": "Solar",
         "sonstig": "Sonstiges",
+    },
+}
+
+_TARGET_DEVICE_LABELS: dict[str, dict[str, str]] = {
+    "en": {
+        "auto": "Auto (from section)",
+        "heating_circuit": "Heating circuit",
+        "hot_water": "Hot water",
+        "solar": "Solar",
+        "boiler": "Boiler",
+    },
+    "de": {
+        "auto": "Auto (aus Sektion)",
+        "heating_circuit": "Heizkreis 1",
+        "hot_water": "Warmwasser",
+        "solar": "Solaranlage",
+        "boiler": "Kessel",
     },
 }
 
@@ -270,6 +288,12 @@ class SolvisOptionsFlow(OptionsFlow):
             options[key] = labels[key]
         return options
 
+    def _target_device_options(self) -> dict[str, str]:
+        """Return localized target device dropdown options."""
+        lang = self._lang()
+        labels = _TARGET_DEVICE_LABELS[lang]
+        return {key: labels[key] for key in TARGET_DEVICE_OPTIONS}
+
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -416,7 +440,7 @@ class SolvisOptionsFlow(OptionsFlow):
 
                     new_profile: dict[str, Any] = {
                         "name": user_input["name"],
-                        "device_group": user_input.get("device_group", "CGI Control"),
+                        "target_device": user_input.get("target_device", "auto"),
                         "icon": user_input.get("icon", "mdi:gesture-tap"),
                         "wakeup_count": wakeup_count,
                         "wakeup_delay": wakeup_delay,
@@ -435,7 +459,9 @@ class SolvisOptionsFlow(OptionsFlow):
                 {
                     vol.Required("profile_key"): str,
                     vol.Required("name"): str,
-                    vol.Optional("device_group", default="CGI Control"): str,
+                    vol.Optional("target_device", default="auto"): vol.In(
+                        self._target_device_options()
+                    ),
                     vol.Optional("icon", default="mdi:gesture-tap"): str,
                     vol.Optional("section", default=""): vol.In(
                         self._section_options()
@@ -478,8 +504,8 @@ class SolvisOptionsFlow(OptionsFlow):
             else:
                 updated_profile: dict[str, Any] = {
                     "name": user_input["name"],
-                    "device_group": user_input.get(
-                        "device_group", profile.get("device_group", "CGI Control")
+                    "target_device": user_input.get(
+                        "target_device", profile.get("target_device", "auto")
                     ),
                     "icon": user_input.get("icon", profile.get("icon", "mdi:gesture-tap")),
                     "wakeup_count": user_input.get("wakeup_count", 4),
@@ -506,9 +532,9 @@ class SolvisOptionsFlow(OptionsFlow):
                 {
                     vol.Required("name", default=profile.get("name", "")): str,
                     vol.Optional(
-                        "device_group",
-                        default=profile.get("device_group", "CGI Control"),
-                    ): str,
+                        "target_device",
+                        default=profile.get("target_device", "auto"),
+                    ): vol.In(self._target_device_options()),
                     vol.Optional(
                         "icon",
                         default=profile.get("icon", "mdi:gesture-tap"),

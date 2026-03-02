@@ -14,9 +14,14 @@ from custom_components.solvis_remote.const import (
     CONF_CGI_PROFILES,
     CONF_ENABLE_CGI,
     DEFAULT_CGI_PROFILES,
+    DEVICE_BOILER,
+    DEVICE_HEATING_CIRCUIT,
+    DEVICE_HOT_WATER,
+    DEVICE_SOLAR,
     DOMAIN,
 )
 from custom_components.solvis_remote.client import SolvisConnectionError
+from custom_components.solvis_remote.select import _resolve_device_group
 
 
 MOCK_CONFIG_DATA = {
@@ -241,3 +246,57 @@ class TestSelectOptionExecution:
         # State should NOT have changed to "day"
         state = hass.states.get(entity_id)
         assert state.state != "Day"
+
+
+class TestResolveDeviceGroup:
+    """Test _resolve_device_group resolver priority chain."""
+
+    def test_auto_from_section_heizung(self) -> None:
+        """target_device=auto + section=heizung → Heizkreis 1."""
+        profile = {"target_device": "auto", "section": "heizung"}
+        assert _resolve_device_group(profile) == DEVICE_HEATING_CIRCUIT
+
+    def test_auto_from_section_wasser(self) -> None:
+        """target_device=auto + section=wasser → Warmwasser."""
+        profile = {"target_device": "auto", "section": "wasser"}
+        assert _resolve_device_group(profile) == DEVICE_HOT_WATER
+
+    def test_auto_from_section_solar(self) -> None:
+        """target_device=auto + section=solar → Solaranlage."""
+        profile = {"target_device": "auto", "section": "solar"}
+        assert _resolve_device_group(profile) == DEVICE_SOLAR
+
+    def test_auto_from_section_zirkulation(self) -> None:
+        """target_device=auto + section=zirkulation → Warmwasser."""
+        profile = {"target_device": "auto", "section": "zirkulation"}
+        assert _resolve_device_group(profile) == DEVICE_HOT_WATER
+
+    def test_auto_from_section_sonstig(self) -> None:
+        """target_device=auto + section=sonstig → Kessel."""
+        profile = {"target_device": "auto", "section": "sonstig"}
+        assert _resolve_device_group(profile) == DEVICE_BOILER
+
+    def test_explicit_target_device(self) -> None:
+        """Explicit target_device overrides section."""
+        profile = {"target_device": "hot_water", "section": "heizung"}
+        assert _resolve_device_group(profile) == DEVICE_HOT_WATER
+
+    def test_legacy_device_group_known(self) -> None:
+        """Legacy device_group with known name (no target_device)."""
+        profile = {"device_group": DEVICE_HEATING_CIRCUIT}
+        assert _resolve_device_group(profile) == DEVICE_HEATING_CIRCUIT
+
+    def test_legacy_cgi_control_with_section(self) -> None:
+        """Legacy device_group='CGI Control' + section=solar → Solaranlage."""
+        profile = {"device_group": "CGI Control", "section": "solar"}
+        assert _resolve_device_group(profile) == DEVICE_SOLAR
+
+    def test_fallback_no_info(self) -> None:
+        """No target_device, no section, no device_group → fallback."""
+        profile = {"name": "Test"}
+        assert _resolve_device_group(profile) == DEVICE_HEATING_CIRCUIT
+
+    def test_default_profile_resolves_correctly(self) -> None:
+        """DEFAULT_CGI_PROFILES heating_mode resolves to Heizkreis 1."""
+        profile = DEFAULT_CGI_PROFILES["heating_mode"]
+        assert _resolve_device_group(profile) == DEVICE_HEATING_CIRCUIT

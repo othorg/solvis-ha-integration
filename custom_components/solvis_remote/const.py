@@ -63,6 +63,24 @@ DEVICE_BOILER = "Kessel"
 DEVICE_HEATING_CIRCUIT = "Heizkreis 1"
 DEVICE_HOT_WATER = "Warmwasser"
 
+# Mapping: CGI section key → device group for entity assignment
+SECTION_TO_DEVICE_GROUP: dict[str, str] = {
+    "heizung": DEVICE_HEATING_CIRCUIT,
+    "wasser": DEVICE_HOT_WATER,
+    "zirkulation": DEVICE_HOT_WATER,
+    "solar": DEVICE_SOLAR,
+    "sonstig": DEVICE_BOILER,
+}
+
+# Mapping: target_device dropdown key → device group (empty = derive from section)
+TARGET_DEVICE_OPTIONS: dict[str, str] = {
+    "auto": "",
+    "heating_circuit": DEVICE_HEATING_CIRCUIT,
+    "hot_water": DEVICE_HOT_WATER,
+    "solar": DEVICE_SOLAR,
+    "boiler": DEVICE_BOILER,
+}
+
 # ---------------------------------------------------------------------------
 # Default CGI command profiles (used as fallback when not yet persisted)
 # ---------------------------------------------------------------------------
@@ -70,7 +88,7 @@ DEVICE_HOT_WATER = "Warmwasser"
 DEFAULT_CGI_PROFILES: dict[str, dict] = {
     "heating_mode": {
         "name": "Heating Mode",
-        "device_group": DEVICE_HEATING_CIRCUIT,
+        "target_device": "heating_circuit",
         "icon": "mdi:radiator",
         "section": "heizung",
         "wakeup_count": 4,

@@ -59,7 +59,7 @@
         "data": {
           "profile_key": "Profilschluessel (unveraenderlich)",
           "name": "Anzeigename",
-          "device_group": "Geraetegruppe",
+          "target_device": "Zielgeraet",
           "icon": "Symbol",
           "section": "Menuesektion",
           "wakeup_count": "Aufweck-Tastendruecke",
@@ -74,7 +74,7 @@
         "description": "Profilschluessel: {profile_key}\nOptionen-Format: {options_format}",
         "data": {
           "name": "Anzeigename",
-          "device_group": "Geraetegruppe",
+          "target_device": "Zielgeraet",
           "icon": "Symbol",
           "section": "Menuesektion",
           "wakeup_count": "Aufweck-Tastendruecke",

@@ -59,7 +59,7 @@
         "data": {
           "profile_key": "Profile key (immutable)",
           "name": "Display name",
-          "device_group": "Device group",
+          "target_device": "Target device",
           "icon": "Icon",
           "section": "Menu section",
           "wakeup_count": "Wake-up presses",
@@ -74,7 +74,7 @@
         "description": "Profile key: {profile_key}\nOptions format: {options_format}",
         "data": {
           "name": "Display name",
-          "device_group": "Device group",
+          "target_device": "Target device",
           "icon": "Icon",
           "section": "Menu section",
           "wakeup_count": "Wake-up presses",

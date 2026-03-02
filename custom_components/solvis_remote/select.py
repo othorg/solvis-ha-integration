@@ -19,13 +19,46 @@ from .const import (
     CONF_CGI_PROFILES,
     CONF_ENABLE_CGI,
     DEFAULT_CGI_PROFILES,
+    DEVICE_BOILER,
+    DEVICE_HEATING_CIRCUIT,
+    DEVICE_HOT_WATER,
+    DEVICE_SOLAR,
     DOMAIN,
     MANUFACTURER,
     MODEL,
+    SECTION_TO_DEVICE_GROUP,
+    TARGET_DEVICE_OPTIONS,
 )
 from .coordinator import SolvisDataUpdateCoordinator
 
 logger = logging.getLogger(__name__)
+
+_KNOWN_DEVICE_GROUPS = {DEVICE_HEATING_CIRCUIT, DEVICE_HOT_WATER, DEVICE_SOLAR, DEVICE_BOILER}
+
+
+def _resolve_device_group(profile: dict[str, Any]) -> str:
+    """Resolve the HA device group for a CGI profile.
+
+    Priority: target_device (explicit) → legacy device_group (known name)
+    → section mapping → fallback.
+    """
+    target = profile.get("target_device", "auto")
+    if target != "auto":
+        group = TARGET_DEVICE_OPTIONS.get(target)
+        if group:
+            return group
+
+    legacy = profile.get("device_group")
+    if legacy in _KNOWN_DEVICE_GROUPS:
+        return legacy
+
+    section = profile.get("section")
+    if section:
+        group = SECTION_TO_DEVICE_GROUP.get(section)
+        if group:
+            return group
+
+    return DEVICE_HEATING_CIRCUIT
 
 
 async def async_setup_entry(
@@ -84,7 +117,7 @@ class SolvisCgiSelect(
         self._attr_options = list(self._key_to_label.values())
         self._attr_current_option = None
 
-        device_group = profile.get("device_group", "CGI Control")
+        device_group = _resolve_device_group(profile)
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, f"{system_id}_{device_group}")},
             name=f"Solvis {device_group}",
