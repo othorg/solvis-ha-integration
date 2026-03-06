@@ -30,3 +30,6 @@ config/
 
 # Claude Code
 .claude/
+
+# Microsoft Code
+solvis-ha-integration.code-workspace
