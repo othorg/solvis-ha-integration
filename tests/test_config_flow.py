@@ -8,7 +8,9 @@ import pytest
 
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.data_entry_flow import FlowResultType
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.solvis_remote.const import (
     CONF_CGI_PROFILES,
@@ -513,6 +515,35 @@ class TestReauthFlow:
         assert result["type"] is FlowResultType.ABORT
         mock_schedule.assert_not_called()
 
+    async def test_reauth_loaded_entry_reloads_exactly_once(
+        self, hass: HomeAssistant
+    ) -> None:
+        """Loaded entry + changed credentials: the listener reloads, once.
+
+        Counting async_reload covers both paths (update listener and
+        async_schedule_reload), so this fails both if nothing reloads and if
+        the flow reloads on top of the listener.
+        """
+        entry = await self._create_entry(hass)
+        assert entry.update_listeners
+
+        with (
+            _patch_fetch(),
+            patch.object(
+                hass.config_entries, "async_reload", new_callable=AsyncMock
+            ) as mock_reload,
+        ):
+            result = await self._start_reauth(hass, entry)
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {"username": "admin2", "password": "newsecret"},
+            )
+            await hass.async_block_till_done()
+
+        assert result["type"] is FlowResultType.ABORT
+        assert mock_reload.await_count == 1
+        assert mock_reload.await_args.args[0] == entry.entry_id
+
     async def test_reauth_unchanged_credentials_reloads(
         self, hass: HomeAssistant
     ) -> None:
@@ -554,6 +585,97 @@ class TestReauthFlow:
         assert result["errors"] == {"base": "invalid_auth"}
         # Credentials must not have been persisted
         assert entry.data["password"] == MOCK_USER_INPUT["password"]
+
+    async def test_reauth_after_failed_setup_reloads(
+        self, hass: HomeAssistant
+    ) -> None:
+        """Setup failed with ConfigEntryAuthFailed: no listener exists yet.
+
+        async_setup_entry registers the update listener only after the first
+        refresh succeeds, so an entry in SETUP_ERROR has none. The reauth step
+        must reload explicitly, or the entry stays broken.
+        """
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                "host": MOCK_USER_INPUT["host"],
+                "username": MOCK_USER_INPUT["username"],
+                "password": MOCK_USER_INPUT["password"],
+                CONF_REALM: DEFAULT_REALM,
+            },
+            options={},
+            unique_id="3412",
+        )
+        entry.add_to_hass(hass)
+        with patch(
+            "custom_components.solvis_remote.SolvisClient.fetch_data",
+            side_effect=SolvisAuthError("bad"),
+        ):
+            await hass.config_entries.async_setup(entry.entry_id)
+            await hass.async_block_till_done()
+
+        assert entry.state is ConfigEntryState.SETUP_ERROR
+        assert not entry.update_listeners
+
+        with (
+            _patch_fetch(),
+            patch.object(
+                hass.config_entries, "async_schedule_reload"
+            ) as mock_schedule,
+        ):
+            result = await self._start_reauth(hass, entry)
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {"username": "admin2", "password": "newsecret"},
+            )
+            await hass.async_block_till_done()
+
+        assert result["type"] is FlowResultType.ABORT
+        assert result["reason"] == "reauth_successful"
+        # Data changed, but there was no listener -> we must reload ourselves.
+        mock_schedule.assert_called_once_with(entry.entry_id)
+
+    async def test_reauth_after_failed_setup_recovers_entry(
+        self, hass: HomeAssistant
+    ) -> None:
+        """End-to-end: a broken entry must actually load again after reauth."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                "host": MOCK_USER_INPUT["host"],
+                "username": MOCK_USER_INPUT["username"],
+                "password": "wrong",
+                CONF_REALM: DEFAULT_REALM,
+            },
+            options={},
+            unique_id="3412",
+        )
+        entry.add_to_hass(hass)
+        with patch(
+            "custom_components.solvis_remote.SolvisClient.fetch_data",
+            side_effect=SolvisAuthError("bad"),
+        ):
+            await hass.config_entries.async_setup(entry.entry_id)
+            await hass.async_block_till_done()
+        assert entry.state is ConfigEntryState.SETUP_ERROR
+
+        with (
+            _patch_fetch(),
+            patch(
+                "custom_components.solvis_remote.SolvisClient.fetch_data",
+                return_value=MOCK_FETCH_RESULT,
+            ),
+        ):
+            result = await self._start_reauth(hass, entry)
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {"username": "admin", "password": "secret"},
+            )
+            await hass.async_block_till_done()
+
+        assert result["type"] is FlowResultType.ABORT
+        assert entry.state is ConfigEntryState.LOADED
+        assert entry.data["password"] == "secret"
 
     async def test_reauth_does_not_use_reload_helper(
         self, hass: HomeAssistant

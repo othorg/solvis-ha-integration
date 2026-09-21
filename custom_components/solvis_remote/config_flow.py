@@ -222,14 +222,18 @@ class SolvisConfigFlow(ConfigFlow, domain=DOMAIN):
                 # reloads the entry whenever its data or options change. Letting
                 # the flow helper reload as well would reload twice, and Home
                 # Assistant drops that implicit reload in 2026.12.
+                has_listener = bool(entry.update_listeners)
                 changed = self.hass.config_entries.async_update_entry(
                     entry,
                     data={**entry.data, **user_input},
                 )
-                if not changed:
-                    # Same credentials re-entered after a transient auth failure:
-                    # no update listener fires, so the entry needs an explicit
-                    # reload to leave the SETUP_ERROR state.
+                if not (changed and has_listener):
+                    # Reload ourselves whenever the listener will not do it:
+                    # - the entry failed to set up (ConfigEntryAuthFailed in
+                    #   async_setup_entry), so no listener is registered at all
+                    #   and the entry would stay in SETUP_ERROR;
+                    # - or the same credentials were re-entered, so the entry
+                    #   did not change and no listener fires.
                     self.hass.config_entries.async_schedule_reload(entry.entry_id)
                 return self.async_abort(reason="reauth_successful")
 
