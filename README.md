@@ -139,6 +139,24 @@ All parameters (host, credentials, realm, scan interval) can be changed at any t
 - HTTP Digest Auth credentials configured on the SolvisRemote
 - Network access from Home Assistant to the SolvisRemote module
 
+## Releasing
+
+HACS installs this integration from GitHub releases. To publish one:
+
+1. Bump `version` in `custom_components/solvis_remote/manifest.json`.
+2. Commit that and push it to `main`; wait for CI to pass.
+3. Tag the same commit and push the tag:
+
+   ```bash
+   git tag v1.2.3 && git push origin v1.2.3
+   ```
+
+The `Release` workflow refuses a tag whose version does not match the
+manifest, then creates the GitHub release with generated notes. In Home
+Assistant, HACS picks the new release up after *Update information* on the
+integration; a restart is required because custom component code is only
+loaded at startup.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
