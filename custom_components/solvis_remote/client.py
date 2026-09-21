@@ -29,7 +29,17 @@ class SolvisConnectionError(Exception):
 
 
 class SolvisAuthError(Exception):
-    """Raised when HTTP Digest Auth fails (401/403)."""
+    """Raised when HTTP Digest Auth is rejected (401) — credentials are wrong."""
+
+
+class SolvisBusyError(Exception):
+    """Raised when the controller refuses the request with HTTP 403.
+
+    The Solvis web interface allows exactly one authenticated session at a
+    time. When another client (browser, second polling program) holds it, our
+    request is answered with 403 even though the credentials are valid. This
+    is a temporary condition and must not be escalated to a reauth flow.
+    """
 
 
 class SolvisPayloadError(Exception):
@@ -210,16 +220,21 @@ class SolvisClient:
         """HTTP GET with response cleanup and error handling (shared helper).
 
         Raises:
-            SolvisAuthError: HTTP 401/403.
+            SolvisAuthError: HTTP 401 (wrong credentials).
+            SolvisBusyError: HTTP 403 (session held by another client).
             SolvisConnectionError: Network or timeout error.
         """
         try:
             with self._opener.open(url, timeout=self.timeout) as resp:
                 resp.read()
         except urllib.error.HTTPError as err:
-            if err.code in (401, 403):
+            if err.code == 401:
                 raise SolvisAuthError(
-                    f"CGI auth failed on {self.host} (HTTP {err.code})"
+                    f"CGI auth rejected on {self.host} (HTTP 401)"
+                ) from err
+            if err.code == 403:
+                raise SolvisBusyError(
+                    f"CGI refused by {self.host} (HTTP 403), session busy"
                 ) from err
             raise SolvisConnectionError(
                 f"CGI HTTP error {err.code} from {self.host}"
@@ -288,16 +303,21 @@ class SolvisClient:
 
         Raises:
             SolvisConnectionError: Network or timeout error.
-            SolvisAuthError: HTTP 401/403.
+            SolvisAuthError: HTTP 401 (wrong credentials).
+            SolvisBusyError: HTTP 403 (session held by another client).
             SolvisPayloadError: XML parse error or payload too short.
         """
         url = self._url()
         try:
             response = self._opener.open(url, timeout=self.timeout)
         except urllib.error.HTTPError as err:
-            if err.code in (401, 403):
+            if err.code == 401:
                 raise SolvisAuthError(
-                    f"Authentication failed for {self.host} (HTTP {err.code})"
+                    f"Authentication rejected by {self.host} (HTTP 401)"
+                ) from err
+            if err.code == 403:
+                raise SolvisBusyError(
+                    f"{self.host} refused the request (HTTP 403), session busy"
                 ) from err
             raise SolvisConnectionError(
                 f"HTTP error {err.code} from {self.host}"

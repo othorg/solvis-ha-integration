@@ -21,6 +21,7 @@ from custom_components.solvis_remote.const import (
 )
 from custom_components.solvis_remote.client import (
     SolvisAuthError,
+    SolvisBusyError,
     SolvisConnectionError,
     SolvisPayloadError,
 )
@@ -69,6 +70,26 @@ class TestSetupEntry:
 
         # HA catches ConfigEntryAuthFailed and sets SETUP_ERROR + creates reauth flow
         assert entry.state is ConfigEntryState.SETUP_ERROR
+
+    async def test_setup_busy_403_retries_instead_of_reauth(
+        self, hass: HomeAssistant
+    ) -> None:
+        """403 at setup = single session taken -> SETUP_RETRY, no reauth flow."""
+        from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+        entry = MockConfigEntry(domain=DOMAIN, data=MOCK_CONFIG_DATA)
+        entry.add_to_hass(hass)
+
+        with _patch_fetch(side_effect=SolvisBusyError("403")):
+            await hass.config_entries.async_setup(entry.entry_id)
+            await hass.async_block_till_done()
+
+        assert entry.state is ConfigEntryState.SETUP_RETRY
+        assert not [
+            f
+            for f in hass.config_entries.flow.async_progress()
+            if f["context"].get("source") == "reauth"
+        ]
 
     async def test_setup_connection_error(self, hass: HomeAssistant) -> None:
         """SolvisConnectionError during setup must raise ConfigEntryNotReady."""

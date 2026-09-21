@@ -15,6 +15,7 @@ from custom_components.solvis_remote.coordinator import SolvisDataUpdateCoordina
 from custom_components.solvis_remote.client import (
     SolvisClient,
     SolvisAuthError,
+    SolvisBusyError,
     SolvisConnectionError,
     SolvisPayloadError,
 )
@@ -113,6 +114,73 @@ class TestCoordinatorErrors:
         coordinator = SolvisDataUpdateCoordinator(hass, client, 60, "3412", entry)
         with pytest.raises(ConfigEntryAuthFailed, match="Authentication"):
             await coordinator._async_update_data()
+
+    async def test_busy_403_retries_then_succeeds(self, hass: HomeAssistant) -> None:
+        """403 = single session taken by another client -> retry, do not reauth."""
+        client = MagicMock(spec=SolvisClient)
+        client.fetch_data.side_effect = [
+            SolvisBusyError("403"),
+            SolvisBusyError("403"),
+            _make_mock_data(),
+        ]
+        entry = _make_mock_entry()
+        entry.add_to_hass(hass)
+
+        coordinator = SolvisDataUpdateCoordinator(hass, client, 60, "3412", entry)
+        with patch("custom_components.solvis_remote.coordinator.BUSY_RETRY_DELAY", 0):
+            data = await coordinator._async_update_data()
+
+        assert client.fetch_data.call_count == 3
+        assert data["s1"]["value"] == 24.2
+
+    async def test_busy_403_never_triggers_reauth(self, hass: HomeAssistant) -> None:
+        """Persistent 403 must end as UpdateFailed, never ConfigEntryAuthFailed.
+
+        Escalating it to reauth is what forced manual re-entry of credentials
+        that were correct all along (seen live on 2026-09-19).
+        """
+        client = MagicMock(spec=SolvisClient)
+        client.fetch_data.side_effect = SolvisBusyError("403")
+        entry = _make_mock_entry()
+        entry.add_to_hass(hass)
+
+        coordinator = SolvisDataUpdateCoordinator(hass, client, 60, "3412", entry)
+        with patch("custom_components.solvis_remote.coordinator.BUSY_RETRY_DELAY", 0):
+            with pytest.raises(UpdateFailed, match="busy"):
+                await coordinator._async_update_data()
+        assert client.fetch_data.call_count == 3
+
+    async def test_cgi_busy_403_retries_then_succeeds(
+        self, hass: HomeAssistant
+    ) -> None:
+        """A CGI command must survive the session being briefly taken."""
+        client = MagicMock(spec=SolvisClient)
+        client.fetch_data.return_value = _make_mock_data()
+        client.execute_cgi_sequence.side_effect = [SolvisBusyError("403"), None]
+        entry = _make_mock_entry()
+        entry.add_to_hass(hass)
+
+        coordinator = SolvisDataUpdateCoordinator(hass, client, 60, "3412", entry)
+        with patch("custom_components.solvis_remote.coordinator.BUSY_RETRY_DELAY", 0):
+            await coordinator.async_execute_cgi_command("heating_mode", "auto")
+
+        assert client.execute_cgi_sequence.call_count == 2
+
+    async def test_cgi_busy_403_never_triggers_reauth(
+        self, hass: HomeAssistant
+    ) -> None:
+        """Persistent 403 on a command must not force a reauth either."""
+        client = MagicMock(spec=SolvisClient)
+        client.fetch_data.return_value = _make_mock_data()
+        client.execute_cgi_sequence.side_effect = SolvisBusyError("403")
+        entry = _make_mock_entry()
+        entry.add_to_hass(hass)
+
+        coordinator = SolvisDataUpdateCoordinator(hass, client, 60, "3412", entry)
+        with patch("custom_components.solvis_remote.coordinator.BUSY_RETRY_DELAY", 0):
+            with pytest.raises(HomeAssistantError, match="busy"):
+                await coordinator.async_execute_cgi_command("heating_mode", "auto")
+        assert client.execute_cgi_sequence.call_count == 3
 
     async def test_connection_error(self, hass: HomeAssistant) -> None:
         client = MagicMock(spec=SolvisClient)

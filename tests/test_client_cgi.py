@@ -10,6 +10,7 @@ import pytest
 from custom_components.solvis_remote.client import (
     SolvisClient,
     SolvisAuthError,
+    SolvisBusyError,
     SolvisConnectionError,
 )
 
@@ -53,8 +54,8 @@ class TestOpenCgi:
             with pytest.raises(SolvisAuthError, match="401"):
                 client._open_cgi("http://192.168.1.100/test")
 
-    def test_auth_error_403(self, client: SolvisClient) -> None:
-        """HTTP 403 must raise SolvisAuthError."""
+    def test_busy_error_403(self, client: SolvisClient) -> None:
+        """HTTP 403 means the single session is taken, not bad credentials."""
         with patch.object(
             client._opener,
             "open",
@@ -62,7 +63,7 @@ class TestOpenCgi:
                 "http://test", 403, "Forbidden", {}, None
             ),
         ):
-            with pytest.raises(SolvisAuthError, match="403"):
+            with pytest.raises(SolvisBusyError, match="403"):
                 client._open_cgi("http://192.168.1.100/test")
 
     def test_http_error_500(self, client: SolvisClient) -> None:

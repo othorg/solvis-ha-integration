@@ -32,6 +32,13 @@ CONF_ENABLE_CGI = "enable_cgi_control"
 DEFAULT_REALM = "SolvisRemote"
 DEFAULT_SCAN_INTERVAL = 60  # seconds
 DEFAULT_TIMEOUT = 10  # seconds
+
+# HTTP 403 handling: the Solvis web interface serves exactly one authenticated
+# session at a time. A second client (browser, another polling program) holding
+# it makes our request fail with 403 although the credentials are valid.
+# Retry a few times before giving up on the update.
+BUSY_RETRY_ATTEMPTS = 3
+BUSY_RETRY_DELAY = 3  # seconds between attempts
 MIN_SCAN_INTERVAL = 10
 MAX_SCAN_INTERVAL = 600
 

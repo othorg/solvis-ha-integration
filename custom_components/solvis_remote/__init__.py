@@ -10,7 +10,13 @@ from homeassistant.const import CONF_HOST, CONF_USERNAME, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 
-from .client import SolvisClient, SolvisAuthError, SolvisConnectionError, SolvisPayloadError
+from .client import (
+    SolvisClient,
+    SolvisAuthError,
+    SolvisBusyError,
+    SolvisConnectionError,
+    SolvisPayloadError,
+)
 from .const import (
     CONF_REALM,
     CONF_SCAN_INTERVAL,
@@ -44,6 +50,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except SolvisAuthError as err:
         raise ConfigEntryAuthFailed(
             f"Authentication failed for {entry.data[CONF_HOST]}"
+        ) from err
+    except SolvisBusyError as err:
+        # Single-session controller busy with another client -> retry later,
+        # this is not a credentials problem.
+        raise ConfigEntryNotReady(
+            f"{entry.data[CONF_HOST]} is busy with another session"
         ) from err
     except SolvisConnectionError as err:
         raise ConfigEntryNotReady(

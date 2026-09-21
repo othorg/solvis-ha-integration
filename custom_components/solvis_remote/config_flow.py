@@ -13,7 +13,13 @@ from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResu
 from homeassistant.const import CONF_HOST, CONF_USERNAME, CONF_PASSWORD
 from homeassistant.core import callback
 
-from .client import SolvisClient, SolvisAuthError, SolvisConnectionError, SolvisPayloadError
+from .client import (
+    SolvisClient,
+    SolvisAuthError,
+    SolvisBusyError,
+    SolvisConnectionError,
+    SolvisPayloadError,
+)
 from .const import (
     CGI_COORD_MAX,
     CGI_DELAY_MAX,
@@ -263,6 +269,8 @@ class SolvisConfigFlow(ConfigFlow, domain=DOMAIN):
             return await self.hass.async_add_executor_job(client.fetch_data)
         except SolvisAuthError:
             return "invalid_auth"
+        except SolvisBusyError:
+            return "controller_busy"
         except SolvisConnectionError:
             return "cannot_connect"
         except SolvisPayloadError:

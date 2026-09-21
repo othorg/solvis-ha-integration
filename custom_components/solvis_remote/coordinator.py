@@ -13,8 +13,20 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .client import SolvisClient, SolvisAuthError, SolvisConnectionError, SolvisPayloadError
-from .const import CGI_SECTIONS, CONF_CGI_PROFILES, DEFAULT_CGI_PROFILES
+from .client import (
+    SolvisClient,
+    SolvisAuthError,
+    SolvisBusyError,
+    SolvisConnectionError,
+    SolvisPayloadError,
+)
+from .const import (
+    BUSY_RETRY_ATTEMPTS,
+    BUSY_RETRY_DELAY,
+    CGI_SECTIONS,
+    CONF_CGI_PROFILES,
+    DEFAULT_CGI_PROFILES,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,16 +57,7 @@ class SolvisDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from the controller and compute derived values."""
         async with self._command_lock:
-            try:
-                raw_data = await self.hass.async_add_executor_job(self.client.fetch_data)
-            except SolvisAuthError as err:
-                raise ConfigEntryAuthFailed(
-                    f"Authentication failed: {err}"
-                ) from err
-            except SolvisConnectionError as err:
-                raise UpdateFailed(f"Connection error: {err}") from err
-            except SolvisPayloadError as err:
-                raise UpdateFailed(f"Invalid payload: {err}") from err
+            raw_data = await self._fetch_with_busy_retry()
 
         # Compute derived values
         data: dict[str, Any] = {}
@@ -110,15 +113,55 @@ class SolvisDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             elapsed = now - self._last_command_time
             if elapsed < 0.5:
                 await asyncio.sleep(0.5 - elapsed)
-            try:
-                await self.hass.async_add_executor_job(
-                    self.client.execute_cgi_sequence, sequence
-                )
-            except SolvisAuthError as err:
-                raise ConfigEntryAuthFailed(
-                    f"CGI auth failed: {err}"
-                ) from err
+            for attempt in range(1, BUSY_RETRY_ATTEMPTS + 1):
+                try:
+                    await self.hass.async_add_executor_job(
+                        self.client.execute_cgi_sequence, sequence
+                    )
+                    break
+                except SolvisBusyError as err:
+                    if attempt == BUSY_RETRY_ATTEMPTS:
+                        raise HomeAssistantError(
+                            f"Controller busy, command not sent after "
+                            f"{BUSY_RETRY_ATTEMPTS} attempts: {err}"
+                        ) from err
+                    await asyncio.sleep(BUSY_RETRY_DELAY)
+                except SolvisAuthError as err:
+                    raise ConfigEntryAuthFailed(
+                        f"CGI auth failed: {err}"
+                    ) from err
             self._last_command_time = time_mod.monotonic()
+
+    async def _fetch_with_busy_retry(self) -> dict[str, Any]:
+        """Fetch data, retrying while the controller reports its session busy.
+
+        HTTP 403 means another client holds the single session the controller
+        offers; the credentials are fine. Retrying usually succeeds once the
+        other client is done, so this must never surface as ConfigEntryAuthFailed.
+        """
+        for attempt in range(1, BUSY_RETRY_ATTEMPTS + 1):
+            try:
+                return await self.hass.async_add_executor_job(self.client.fetch_data)
+            except SolvisBusyError as err:
+                if attempt == BUSY_RETRY_ATTEMPTS:
+                    raise UpdateFailed(
+                        f"Controller busy after {BUSY_RETRY_ATTEMPTS} attempts: {err}"
+                    ) from err
+                logger.debug(
+                    "Solvis controller busy (attempt %s/%s), retrying in %ss: %s",
+                    attempt,
+                    BUSY_RETRY_ATTEMPTS,
+                    BUSY_RETRY_DELAY,
+                    err,
+                )
+                await asyncio.sleep(BUSY_RETRY_DELAY)
+            except SolvisAuthError as err:
+                raise ConfigEntryAuthFailed(f"Authentication failed: {err}") from err
+            except SolvisConnectionError as err:
+                raise UpdateFailed(f"Connection error: {err}") from err
+            except SolvisPayloadError as err:
+                raise UpdateFailed(f"Invalid payload: {err}") from err
+        raise UpdateFailed("Controller busy")  # pragma: no cover - loop always returns
 
     def _compute_derived(self, data: dict[str, Any]) -> None:
         """Add computed sensors (delta_s5s6, brennerleistung) to data dict."""

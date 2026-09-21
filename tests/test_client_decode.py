@@ -9,6 +9,7 @@ import xml.etree.ElementTree as ET
 import pytest
 
 from custom_components.solvis_remote.client import (
+    SolvisBusyError,
     SolvisClient,
     SolvisAuthError,
     SolvisConnectionError,
@@ -168,14 +169,15 @@ class TestFetchErrors:
             with pytest.raises(SolvisAuthError, match="401"):
                 self.client.fetch_data()
 
-    def test_auth_error_403(self):
+    def test_busy_error_403(self):
+        """HTTP 403 means the single session is taken, not bad credentials."""
         import urllib.error
         error = urllib.error.HTTPError(
             url="http://test", code=403, msg="Forbidden",
             hdrs=None, fp=None,
         )
         with patch.object(self.client._opener, "open", side_effect=error):
-            with pytest.raises(SolvisAuthError, match="403"):
+            with pytest.raises(SolvisBusyError, match="403"):
                 self.client.fetch_data()
 
     def test_connection_error(self):
