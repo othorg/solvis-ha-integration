@@ -102,88 +102,36 @@
   },
   "entity": {
     "sensor": {
-      "hot_water_buffer": {
-        "name": "Hot water buffer"
-      },
-      "hot_water_temperature": {
-        "name": "Hot water temperature"
-      },
-      "storage_reference": {
-        "name": "Storage reference"
-      },
-      "heating_buffer_top": {
-        "name": "Heating buffer top"
-      },
-      "flow_temperature_solar": {
-        "name": "Flow temperature solar"
-      },
-      "return_temperature": {
-        "name": "Return temperature"
-      },
-      "collector_temperature": {
-        "name": "Collector temperature"
-      },
-      "heating_buffer_bottom": {
-        "name": "Heating buffer bottom"
-      },
-      "outdoor_temperature": {
-        "name": "Outdoor temperature"
-      },
-      "circulation_temperature": {
-        "name": "Circulation temperature"
-      },
-      "flow_temperature_heating": {
-        "name": "Flow temperature heating"
-      },
-      "collector_transfer": {
-        "name": "Collector transfer"
-      },
-      "room_temperature": {
-        "name": "Room temperature"
-      },
-      "flow_rate_solar": {
-        "name": "Flow rate solar"
-      },
-      "flow_rate_hot_water": {
-        "name": "Flow rate hot water"
-      },
-      "burner_modulation": {
-        "name": "Burner modulation"
-      },
-      "solar_power": {
-        "name": "Solar power"
-      },
-      "solar_yield": {
-        "name": "Solar yield"
-      },
-      "solar_temperature_delta": {
-        "name": "Solar temperature delta"
-      },
-      "burner_power": {
-        "name": "Burner power"
-      }
+      "hot_water_buffer": { "name": "Hot water buffer" },
+      "hot_water_temperature": { "name": "Hot water temperature" },
+      "storage_reference": { "name": "Storage reference" },
+      "heating_buffer_top": { "name": "Heating buffer top" },
+      "flow_temperature_solar": { "name": "Flow temperature solar" },
+      "return_temperature": { "name": "Return temperature" },
+      "collector_temperature": { "name": "Collector temperature" },
+      "heating_buffer_bottom": { "name": "Heating buffer bottom" },
+      "outdoor_temperature": { "name": "Outdoor temperature" },
+      "circulation_temperature": { "name": "Circulation temperature" },
+      "flow_temperature_heating": { "name": "Flow temperature heating" },
+      "collector_transfer": { "name": "Collector transfer" },
+      "room_temperature": { "name": "Room temperature" },
+      "flow_rate_solar": { "name": "Flow rate solar" },
+      "flow_rate_hot_water": { "name": "Flow rate hot water" },
+      "burner_modulation": { "name": "Burner modulation" },
+      "solar_power": { "name": "Solar power" },
+      "solar_yield": { "name": "Solar yield" },
+      "solar_temperature_delta": { "name": "Solar temperature delta" },
+      "burner_power": { "name": "Burner power" }
     },
     "binary_sensor": {
-      "solar_pump": {
-        "name": "Solar pump"
-      },
-      "hot_water_pump": {
-        "name": "Hot water pump"
-      },
-      "heating_circuit_pump": {
-        "name": "Heating circuit pump"
-      },
-      "circulation_pump": {
-        "name": "Circulation pump"
-      },
-      "burner": {
-        "name": "Burner"
-      }
+      "solar_pump": { "name": "Solar pump" },
+      "hot_water_pump": { "name": "Hot water pump" },
+      "heating_circuit_pump": { "name": "Heating circuit pump" },
+      "circulation_pump": { "name": "Circulation pump" },
+      "burner": { "name": "Burner" }
     },
     "image": {
-      "anlagenschema": {
-        "name": "System diagram"
-      }
+      "anlagenschema": { "name": "System diagram" }
     }
   }
 }
