@@ -217,10 +217,21 @@ class SolvisConfigFlow(ConfigFlow, domain=DOMAIN):
             if isinstance(result, str):
                 errors["base"] = result
             else:
-                return self.async_update_reload_and_abort(
+                # Do not use async_update_reload_and_abort(): this integration
+                # registers an update listener (see __init__.py), which already
+                # reloads the entry whenever its data or options change. Letting
+                # the flow helper reload as well would reload twice, and Home
+                # Assistant drops that implicit reload in 2026.12.
+                changed = self.hass.config_entries.async_update_entry(
                     entry,
                     data={**entry.data, **user_input},
                 )
+                if not changed:
+                    # Same credentials re-entered after a transient auth failure:
+                    # no update listener fires, so the entry needs an explicit
+                    # reload to leave the SETUP_ERROR state.
+                    self.hass.config_entries.async_schedule_reload(entry.entry_id)
+                return self.async_abort(reason="reauth_successful")
 
         return self.async_show_form(
             step_id="reauth_confirm",

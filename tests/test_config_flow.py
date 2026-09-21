@@ -432,3 +432,156 @@ class TestTargetDeviceField:
 
         schema_keys = [str(k) for k in result["data_schema"].schema.keys()]
         assert "device_group" not in schema_keys
+
+
+# ---------------------------------------------------------------------------
+# Reauth flow
+# ---------------------------------------------------------------------------
+
+class TestReauthFlow:
+    """Test the reauth flow.
+
+    The integration registers an update listener that reloads the entry on any
+    data/options change. The reauth step must therefore NOT use
+    async_update_reload_and_abort() — that would reload twice today and relies
+    on an implicit reload Home Assistant drops in 2026.12.
+    """
+
+    async def _create_entry(self, hass: HomeAssistant):
+        """Helper: create a config entry via the config flow."""
+        with _patch_fetch():
+            result = await hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": config_entries.SOURCE_USER}
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], MOCK_USER_INPUT
+            )
+        return result["result"]
+
+    @staticmethod
+    async def _start_reauth(hass: HomeAssistant, entry):
+        """Helper: start the reauth flow for an entry."""
+        return await hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={
+                "source": config_entries.SOURCE_REAUTH,
+                "entry_id": entry.entry_id,
+            },
+            data=dict(entry.data),
+        )
+
+    async def test_reauth_updates_credentials(self, hass: HomeAssistant) -> None:
+        """A successful reauth must persist the new credentials and abort."""
+        entry = await self._create_entry(hass)
+
+        result = await self._start_reauth(hass, entry)
+        assert result["type"] is FlowResultType.FORM
+        assert result["step_id"] == "reauth_confirm"
+
+        with _patch_fetch():
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {"username": "admin2", "password": "newsecret"},
+            )
+            await hass.async_block_till_done()
+
+        assert result["type"] is FlowResultType.ABORT
+        assert result["reason"] == "reauth_successful"
+        assert entry.data["username"] == "admin2"
+        assert entry.data["password"] == "newsecret"
+        # Untouched keys must survive
+        assert entry.data["host"] == MOCK_USER_INPUT["host"]
+        assert entry.data[CONF_REALM] == DEFAULT_REALM
+
+    async def test_reauth_does_not_reload_twice(self, hass: HomeAssistant) -> None:
+        """Changed credentials: the update listener reloads, the flow must not."""
+        entry = await self._create_entry(hass)
+
+        with (
+            _patch_fetch(),
+            patch.object(
+                hass.config_entries, "async_schedule_reload"
+            ) as mock_schedule,
+        ):
+            result = await self._start_reauth(hass, entry)
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {"username": "admin2", "password": "newsecret"},
+            )
+            await hass.async_block_till_done()
+
+        assert result["type"] is FlowResultType.ABORT
+        mock_schedule.assert_not_called()
+
+    async def test_reauth_unchanged_credentials_reloads(
+        self, hass: HomeAssistant
+    ) -> None:
+        """Same credentials re-entered: no listener fires, so reload explicitly."""
+        entry = await self._create_entry(hass)
+
+        with (
+            _patch_fetch(),
+            patch.object(
+                hass.config_entries, "async_schedule_reload"
+            ) as mock_schedule,
+        ):
+            result = await self._start_reauth(hass, entry)
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {
+                    "username": MOCK_USER_INPUT["username"],
+                    "password": MOCK_USER_INPUT["password"],
+                },
+            )
+            await hass.async_block_till_done()
+
+        assert result["type"] is FlowResultType.ABORT
+        assert result["reason"] == "reauth_successful"
+        mock_schedule.assert_called_once_with(entry.entry_id)
+
+    async def test_reauth_auth_error_shows_form(self, hass: HomeAssistant) -> None:
+        """Wrong credentials must keep the form open with invalid_auth."""
+        entry = await self._create_entry(hass)
+
+        result = await self._start_reauth(hass, entry)
+        with _patch_fetch(side_effect=SolvisAuthError("nope")):
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {"username": "admin", "password": "wrong"},
+            )
+
+        assert result["type"] is FlowResultType.FORM
+        assert result["errors"] == {"base": "invalid_auth"}
+        # Credentials must not have been persisted
+        assert entry.data["password"] == MOCK_USER_INPUT["password"]
+
+    async def test_reauth_does_not_use_reload_helper(
+        self, hass: HomeAssistant
+    ) -> None:
+        """Reauth must not call async_update_reload_and_abort().
+
+        Home Assistant drops that helper's implicit reload in 2026.12 for
+        integrations that register an update listener, and warns about it
+        today. This test fails if the flow goes back to using it.
+        """
+        entry = await self._create_entry(hass)
+
+        from custom_components.solvis_remote.config_flow import SolvisConfigFlow
+
+        with (
+            _patch_fetch(),
+            patch.object(
+                SolvisConfigFlow,
+                "async_update_reload_and_abort",
+                side_effect=AssertionError("async_update_reload_and_abort was called"),
+            ),
+        ):
+            result = await self._start_reauth(hass, entry)
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {"username": "admin2", "password": "newsecret"},
+            )
+            await hass.async_block_till_done()
+
+        assert result["type"] is FlowResultType.ABORT
+        assert result["reason"] == "reauth_successful"
