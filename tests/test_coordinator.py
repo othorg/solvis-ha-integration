@@ -115,29 +115,15 @@ class TestCoordinatorErrors:
         with pytest.raises(ConfigEntryAuthFailed, match="Authentication"):
             await coordinator._async_update_data()
 
-    async def test_busy_403_retries_then_succeeds(self, hass: HomeAssistant) -> None:
-        """403 = single session taken by another client -> retry, do not reauth."""
-        client = MagicMock(spec=SolvisClient)
-        client.fetch_data.side_effect = [
-            SolvisBusyError("403"),
-            SolvisBusyError("403"),
-            _make_mock_data(),
-        ]
-        entry = _make_mock_entry()
-        entry.add_to_hass(hass)
-
-        coordinator = SolvisDataUpdateCoordinator(hass, client, 60, "3412", entry)
-        with patch("custom_components.solvis_remote.coordinator._busy_delay", return_value=0):
-            data = await coordinator._async_update_data()
-
-        assert client.fetch_data.call_count == 3
-        assert data["s1"]["value"] == 24.2
-
-    async def test_busy_403_never_triggers_reauth(self, hass: HomeAssistant) -> None:
-        """Persistent 403 must end as UpdateFailed, never ConfigEntryAuthFailed.
+    async def test_busy_403_fails_fast_without_reauth(
+        self, hass: HomeAssistant
+    ) -> None:
+        """Polling: 403 -> UpdateFailed on the spot, never ConfigEntryAuthFailed.
 
         Escalating it to reauth is what forced manual re-entry of credentials
-        that were correct all along (seen live on 2026-09-19).
+        that were correct all along (seen live on 2026-09-19). No retry here:
+        the next poll is one scan_interval away, and retrying would only add
+        contention for the controller's single session.
         """
         client = MagicMock(spec=SolvisClient)
         client.fetch_data.side_effect = SolvisBusyError("403")
@@ -145,10 +131,9 @@ class TestCoordinatorErrors:
         entry.add_to_hass(hass)
 
         coordinator = SolvisDataUpdateCoordinator(hass, client, 60, "3412", entry)
-        with patch("custom_components.solvis_remote.coordinator._busy_delay", return_value=0):
-            with pytest.raises(UpdateFailed, match="busy"):
-                await coordinator._async_update_data()
-        assert client.fetch_data.call_count == 3
+        with pytest.raises(UpdateFailed, match="busy"):
+            await coordinator._async_update_data()
+        assert client.fetch_data.call_count == 1
 
     async def test_cgi_busy_403_retries_then_succeeds(
         self, hass: HomeAssistant

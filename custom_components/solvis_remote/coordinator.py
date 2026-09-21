@@ -68,7 +68,22 @@ class SolvisDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from the controller and compute derived values."""
         async with self._command_lock:
-            raw_data = await self._fetch_with_busy_retry()
+            try:
+                raw_data = await self.hass.async_add_executor_job(
+                    self.client.fetch_data
+                )
+            except SolvisBusyError as err:
+                # Another client holds the controller's single session. Not a
+                # credentials problem, and not worth retrying here: the next
+                # poll is only scan_interval away, and hammering the box while
+                # the other client works would just add contention.
+                raise UpdateFailed(f"Controller busy: {err}") from err
+            except SolvisAuthError as err:
+                raise ConfigEntryAuthFailed(f"Authentication failed: {err}") from err
+            except SolvisConnectionError as err:
+                raise UpdateFailed(f"Connection error: {err}") from err
+            except SolvisPayloadError as err:
+                raise UpdateFailed(f"Invalid payload: {err}") from err
 
         # Compute derived values
         data: dict[str, Any] = {}
@@ -150,36 +165,6 @@ class SolvisDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         f"CGI auth failed: {err}"
                     ) from err
             self._last_command_time = time_mod.monotonic()
-
-    async def _fetch_with_busy_retry(self) -> dict[str, Any]:
-        """Fetch data, retrying while the controller reports its session busy.
-
-        HTTP 403 means another client holds the single session the controller
-        offers; the credentials are fine. Retrying usually succeeds once the
-        other client is done, so this must never surface as ConfigEntryAuthFailed.
-        """
-        for attempt in range(1, BUSY_RETRY_ATTEMPTS + 1):
-            try:
-                return await self.hass.async_add_executor_job(self.client.fetch_data)
-            except SolvisBusyError as err:
-                if attempt == BUSY_RETRY_ATTEMPTS:
-                    raise UpdateFailed(
-                        f"Controller busy after {BUSY_RETRY_ATTEMPTS} attempts: {err}"
-                    ) from err
-                logger.debug(
-                    "Solvis controller busy (attempt %s/%s), retrying: %s",
-                    attempt,
-                    BUSY_RETRY_ATTEMPTS,
-                    err,
-                )
-                await asyncio.sleep(_busy_delay())
-            except SolvisAuthError as err:
-                raise ConfigEntryAuthFailed(f"Authentication failed: {err}") from err
-            except SolvisConnectionError as err:
-                raise UpdateFailed(f"Connection error: {err}") from err
-            except SolvisPayloadError as err:
-                raise UpdateFailed(f"Invalid payload: {err}") from err
-        raise UpdateFailed("Controller busy")  # pragma: no cover - loop always returns
 
     def _compute_derived(self, data: dict[str, Any]) -> None:
         """Add computed sensors (delta_s5s6, brennerleistung) to data dict."""

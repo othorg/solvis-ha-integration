@@ -36,7 +36,9 @@ DEFAULT_TIMEOUT = 10  # seconds
 # HTTP 403 handling: the Solvis web interface serves exactly one authenticated
 # session at a time. A second client (browser, another polling program) holding
 # it makes our request fail with 403 although the credentials are valid.
-# Retry a few times before giving up on the update.
+# Polling does not retry -- the next poll is one scan_interval away. A CGI
+# command does, but only while nothing of its touch sequence has been sent yet,
+# because a lost command is not repaired by the next cycle.
 BUSY_RETRY_ATTEMPTS = 3
 BUSY_RETRY_DELAY = 3  # seconds between attempts
 MIN_SCAN_INTERVAL = 10

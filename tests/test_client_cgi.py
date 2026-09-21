@@ -276,3 +276,33 @@ class TestSequencePartialFlag:
             with pytest.raises(SolvisBusyError) as exc:
                 client.execute_cgi_sequence(self._seq())
         assert exc.value.partial is True
+
+    def test_403_on_reset_touch_is_partial(self, client: SolvisClient) -> None:
+        """The exact dangerous case: value touch applied, reset touch gets 403.
+
+        Replaying the sequence here would send the value touch a second time.
+        """
+        seq = {
+            "wakeup_count": 1,
+            "wakeup_delay": 0,
+            "section_touch": {"x": 10, "y": 10},
+            "x": 100,
+            "y": 200,
+            "reset_touch": {"x": 510, "y": 510},
+        }
+        touches: list[tuple[int, int]] = []
+
+        def _touch(x: int, y: int) -> None:
+            touches.append((x, y))
+            if (x, y) == (510, 510):  # reset touch, i.e. after the value touch
+                raise SolvisBusyError("403")
+
+        with (
+            patch.object(client, "send_button_press"),
+            patch.object(client, "send_touch", side_effect=_touch),
+        ):
+            with pytest.raises(SolvisBusyError) as exc:
+                client.execute_cgi_sequence(seq)
+
+        assert (100, 200) in touches  # value touch really went through
+        assert exc.value.partial is True
