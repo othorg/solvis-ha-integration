@@ -127,7 +127,7 @@ class TestCoordinatorErrors:
         entry.add_to_hass(hass)
 
         coordinator = SolvisDataUpdateCoordinator(hass, client, 60, "3412", entry)
-        with patch("custom_components.solvis_remote.coordinator.BUSY_RETRY_DELAY", 0):
+        with patch("custom_components.solvis_remote.coordinator._busy_delay", return_value=0):
             data = await coordinator._async_update_data()
 
         assert client.fetch_data.call_count == 3
@@ -145,7 +145,7 @@ class TestCoordinatorErrors:
         entry.add_to_hass(hass)
 
         coordinator = SolvisDataUpdateCoordinator(hass, client, 60, "3412", entry)
-        with patch("custom_components.solvis_remote.coordinator.BUSY_RETRY_DELAY", 0):
+        with patch("custom_components.solvis_remote.coordinator._busy_delay", return_value=0):
             with pytest.raises(UpdateFailed, match="busy"):
                 await coordinator._async_update_data()
         assert client.fetch_data.call_count == 3
@@ -161,7 +161,7 @@ class TestCoordinatorErrors:
         entry.add_to_hass(hass)
 
         coordinator = SolvisDataUpdateCoordinator(hass, client, 60, "3412", entry)
-        with patch("custom_components.solvis_remote.coordinator.BUSY_RETRY_DELAY", 0):
+        with patch("custom_components.solvis_remote.coordinator._busy_delay", return_value=0):
             await coordinator.async_execute_cgi_command("heating_mode", "auto")
 
         assert client.execute_cgi_sequence.call_count == 2
@@ -177,10 +177,38 @@ class TestCoordinatorErrors:
         entry.add_to_hass(hass)
 
         coordinator = SolvisDataUpdateCoordinator(hass, client, 60, "3412", entry)
-        with patch("custom_components.solvis_remote.coordinator.BUSY_RETRY_DELAY", 0):
+        with patch("custom_components.solvis_remote.coordinator._busy_delay", return_value=0):
             with pytest.raises(HomeAssistantError, match="busy"):
                 await coordinator.async_execute_cgi_command("heating_mode", "auto")
         assert client.execute_cgi_sequence.call_count == 3
+
+    async def test_cgi_partial_sequence_is_not_replayed(
+        self, hass: HomeAssistant
+    ) -> None:
+        """A 403 mid-sequence must abort, not replay the touches.
+
+        The touch that changes the value may already have reached the panel.
+        For a momentary action (e.g. "Warmwasser aktiv nachheizen") replaying
+        it would trigger it a second time.
+        """
+        client = MagicMock(spec=SolvisClient)
+        client.fetch_data.return_value = _make_mock_data()
+        client.execute_cgi_sequence.side_effect = SolvisBusyError(
+            "403", partial=True
+        )
+        entry = _make_mock_entry()
+        entry.add_to_hass(hass)
+
+        coordinator = SolvisDataUpdateCoordinator(hass, client, 60, "3412", entry)
+        with patch(
+            "custom_components.solvis_remote.coordinator._busy_delay",
+            return_value=0,
+        ):
+            with pytest.raises(HomeAssistantError, match="mid-sequence"):
+                await coordinator.async_execute_cgi_command("heating_mode", "auto")
+
+        # exactly one attempt, no replay
+        assert client.execute_cgi_sequence.call_count == 1
 
     async def test_connection_error(self, hass: HomeAssistant) -> None:
         client = MagicMock(spec=SolvisClient)

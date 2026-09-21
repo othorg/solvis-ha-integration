@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import time as time_mod
 from datetime import timedelta
 from typing import Any
@@ -29,6 +30,16 @@ from .const import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _busy_delay() -> float:
+    """Return the retry delay with jitter.
+
+    Both this integration and the other program polling the controller run on
+    fixed intervals. A fixed retry delay would keep them phase-locked on the
+    single session the controller offers, so spread the retries out.
+    """
+    return BUSY_RETRY_DELAY * random.uniform(0.5, 1.5)
 
 
 class SolvisDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -120,12 +131,20 @@ class SolvisDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     )
                     break
                 except SolvisBusyError as err:
+                    if err.partial:
+                        # Part of the touch sequence already reached the panel.
+                        # Replaying it could apply the same touch twice, which
+                        # for a momentary action means triggering it twice.
+                        raise HomeAssistantError(
+                            "Controller became busy mid-sequence; command may "
+                            f"have been applied partially, not retrying: {err}"
+                        ) from err
                     if attempt == BUSY_RETRY_ATTEMPTS:
                         raise HomeAssistantError(
                             f"Controller busy, command not sent after "
                             f"{BUSY_RETRY_ATTEMPTS} attempts: {err}"
                         ) from err
-                    await asyncio.sleep(BUSY_RETRY_DELAY)
+                    await asyncio.sleep(_busy_delay())
                 except SolvisAuthError as err:
                     raise ConfigEntryAuthFailed(
                         f"CGI auth failed: {err}"
@@ -148,13 +167,12 @@ class SolvisDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         f"Controller busy after {BUSY_RETRY_ATTEMPTS} attempts: {err}"
                     ) from err
                 logger.debug(
-                    "Solvis controller busy (attempt %s/%s), retrying in %ss: %s",
+                    "Solvis controller busy (attempt %s/%s), retrying: %s",
                     attempt,
                     BUSY_RETRY_ATTEMPTS,
-                    BUSY_RETRY_DELAY,
                     err,
                 )
-                await asyncio.sleep(BUSY_RETRY_DELAY)
+                await asyncio.sleep(_busy_delay())
             except SolvisAuthError as err:
                 raise ConfigEntryAuthFailed(f"Authentication failed: {err}") from err
             except SolvisConnectionError as err:

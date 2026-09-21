@@ -239,3 +239,40 @@ class TestExecuteCgiSequence:
         touch_calls = mock_touch.call_args_list
         assert touch_calls[0] == call(315, 215)    # option touch
         assert touch_calls[1] == call(510, 510)    # reset touch
+
+
+class TestSequencePartialFlag:
+    """A 403 must record how far the CGI sequence already got."""
+
+    def _seq(self) -> dict:
+        return {
+            "wakeup_count": 2,
+            "wakeup_delay": 0,
+            "section_touch": {"x": 10, "y": 10},
+            "x": 100,
+            "y": 200,
+            "reset_touch": {"x": 510, "y": 510},
+        }
+
+    def test_403_on_first_request_is_not_partial(
+        self, client: SolvisClient
+    ) -> None:
+        """Nothing sent yet -> safe to retry."""
+        with patch.object(
+            client, "send_button_press", side_effect=SolvisBusyError("403")
+        ):
+            with pytest.raises(SolvisBusyError) as exc:
+                client.execute_cgi_sequence(self._seq())
+        assert exc.value.partial is False
+
+    def test_403_after_first_request_is_partial(
+        self, client: SolvisClient
+    ) -> None:
+        """Something already reached the panel -> must not be replayed."""
+        with (
+            patch.object(client, "send_button_press"),
+            patch.object(client, "send_touch", side_effect=SolvisBusyError("403")),
+        ):
+            with pytest.raises(SolvisBusyError) as exc:
+                client.execute_cgi_sequence(self._seq())
+        assert exc.value.partial is True
