@@ -147,18 +147,23 @@ class SolvisDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     break
                 except SolvisBusyError as err:
                     if err.partial:
-                        # Part of the touch sequence already reached the panel.
-                        # Replaying it could apply the same touch twice, which
-                        # for a momentary action means triggering it twice.
+                        # An earlier step of the touch sequence completed, so
+                        # the touch that changes the value may already have
+                        # been applied. Replaying it would apply it twice,
+                        # which for a momentary action means triggering it
+                        # a second time.
                         raise HomeAssistantError(
                             "Controller became busy mid-sequence; command may "
                             f"have been applied partially, not retrying: {err}"
                         ) from err
                     if attempt == BUSY_RETRY_ATTEMPTS:
                         raise HomeAssistantError(
-                            f"Controller busy, command not sent after "
+                            f"Controller busy, command refused after "
                             f"{BUSY_RETRY_ATTEMPTS} attempts: {err}"
                         ) from err
+                    # Only 403 is retried. A request that took effect but
+                    # whose response was lost surfaces as
+                    # SolvisConnectionError and deliberately escapes here.
                     await asyncio.sleep(_busy_delay())
                 except SolvisAuthError as err:
                     raise ConfigEntryAuthFailed(

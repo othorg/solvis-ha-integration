@@ -41,8 +41,8 @@ class SolvisBusyError(Exception):
     is a temporary condition and must not be escalated to a reauth flow.
 
     Attributes:
-        partial: True when the 403 hit a multi-step CGI sequence that had
-            already sent at least one request. Such a sequence must NOT be
+        partial: True when the 403 hit a multi-step CGI sequence in which an
+            earlier step had already completed. Such a sequence must NOT be
             replayed -- the touch that changes a value may already have been
             applied, and repeating it would apply it twice.
     """
@@ -288,17 +288,24 @@ class SolvisClient:
         """
         from .const import CGI_SECTION_DELAY, CGI_TOUCH_DELAY
 
-        sent = 0
+        completed_steps = 0
 
         def _step(func, *args) -> None:
-            """Run one request, tagging a 403 with how far we already got."""
-            nonlocal sent
+            """Run one request, tagging a 403 with how far we already got.
+
+            `completed_steps == 0` means no earlier step returned successfully
+            and this request was explicitly refused with 403. It does not prove
+            that nothing reached the controller -- a request that took effect
+            but whose response was lost raises SolvisConnectionError, which the
+            caller must not retry.
+            """
+            nonlocal completed_steps
             try:
                 func(*args)
             except SolvisBusyError as err:
-                err.partial = sent > 0
+                err.partial = completed_steps > 0
                 raise
-            sent += 1
+            completed_steps += 1
 
         for _ in range(sequence["wakeup_count"]):
             _step(self.send_button_press)

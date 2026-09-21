@@ -167,6 +167,53 @@ class TestCoordinatorErrors:
                 await coordinator.async_execute_cgi_command("heating_mode", "auto")
         assert client.execute_cgi_sequence.call_count == 3
 
+    async def test_cgi_lost_response_is_not_retried(
+        self, hass: HomeAssistant
+    ) -> None:
+        """A request may take effect and still fail while reading the response.
+
+        That surfaces as SolvisConnectionError, not 403, and must escape the
+        retry loop -- retrying could re-apply a touch that already landed.
+        """
+        client = MagicMock(spec=SolvisClient)
+        client.fetch_data.return_value = _make_mock_data()
+        client.execute_cgi_sequence.side_effect = SolvisConnectionError(
+            "timed out reading response"
+        )
+        entry = _make_mock_entry()
+        entry.add_to_hass(hass)
+
+        coordinator = SolvisDataUpdateCoordinator(hass, client, 60, "3412", entry)
+        with patch(
+            "custom_components.solvis_remote.coordinator._busy_delay",
+            return_value=0,
+        ):
+            with pytest.raises(SolvisConnectionError):
+                await coordinator.async_execute_cgi_command("heating_mode", "auto")
+
+        assert client.execute_cgi_sequence.call_count == 1
+
+    async def test_cgi_busy_then_timeout_stops(self, hass: HomeAssistant) -> None:
+        """403 then a transport error: retry once, then give up. No third try."""
+        client = MagicMock(spec=SolvisClient)
+        client.fetch_data.return_value = _make_mock_data()
+        client.execute_cgi_sequence.side_effect = [
+            SolvisBusyError("403"),
+            SolvisConnectionError("timed out"),
+        ]
+        entry = _make_mock_entry()
+        entry.add_to_hass(hass)
+
+        coordinator = SolvisDataUpdateCoordinator(hass, client, 60, "3412", entry)
+        with patch(
+            "custom_components.solvis_remote.coordinator._busy_delay",
+            return_value=0,
+        ):
+            with pytest.raises(SolvisConnectionError):
+                await coordinator.async_execute_cgi_command("heating_mode", "auto")
+
+        assert client.execute_cgi_sequence.call_count == 2
+
     async def test_cgi_partial_sequence_is_not_replayed(
         self, hass: HomeAssistant
     ) -> None:
