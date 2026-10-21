@@ -33,3 +33,6 @@ config/
 
 # Microsoft Code
 solvis-ha-integration.code-workspace
+
+# Local scratch files
+.tmp*

@@ -56,12 +56,12 @@ class SolvisDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         super().__init__(
             hass,
             logger,
+            config_entry=config_entry,
             name="Solvis",
             update_interval=timedelta(seconds=scan_interval),
         )
         self.client = client
         self.system_id = system_id
-        self.config_entry = config_entry
         self._command_lock = asyncio.Lock()
         self._last_command_time: float = 0
 

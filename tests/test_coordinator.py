@@ -55,6 +55,28 @@ def _make_mock_entry_with_profiles(profiles: dict):
     )
 
 
+class TestCoordinatorConfigEntry:
+    """Test that the coordinator is bound to its config entry."""
+
+    async def test_shutdown_registered_on_entry_unload(
+        self, hass: HomeAssistant
+    ) -> None:
+        """The entry is passed to HA, which registers the coordinator shutdown.
+
+        Without ``config_entry=`` HA falls back to a ContextVar that is only set
+        during entry setup, so outside of it the shutdown would not be registered.
+        """
+        client = MagicMock(spec=SolvisClient)
+        entry = _make_mock_entry()
+        entry.add_to_hass(hass)
+
+        with patch.object(entry, "async_on_unload") as on_unload:
+            coordinator = SolvisDataUpdateCoordinator(hass, client, 60, "3412", entry)
+
+        assert coordinator.config_entry is entry
+        on_unload.assert_called_once_with(coordinator.async_shutdown)
+
+
 class TestCoordinatorDerivedValues:
     """Test computed values (delta_s5s6, brennerleistung)."""
 
