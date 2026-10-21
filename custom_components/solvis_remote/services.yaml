@@ -1,0 +1,75 @@
+touch:
+  fields:
+    entity_id:
+      required: true
+      selector:
+        entity:
+          integration: solvis_remote
+          domain: camera
+    x:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 479
+          mode: box
+    y:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 255
+          mode: box
+    duration:
+      default: 0.5
+      selector:
+        number:
+          min: 0.5
+          max: 10
+          step: 0.1
+          unit_of_measurement: s
+touch_down:
+  fields:
+    entity_id:
+      required: true
+      selector:
+        entity:
+          integration: solvis_remote
+          domain: camera
+    x:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 479
+          mode: box
+    y:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 255
+          mode: box
+touch_up:
+  fields:
+    entity_id:
+      required: true
+      selector:
+        entity:
+          integration: solvis_remote
+          domain: camera
+press_button:
+  fields:
+    entity_id:
+      required: true
+      selector:
+        entity:
+          integration: solvis_remote
+          domain: camera
+    button:
+      required: true
+      selector:
+        select:
+          options:
+            - links
+            - rechts

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import random
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -217,6 +218,52 @@ class SolvisClient:
             self.password,
         )
         self._opener = urllib.request.build_opener(auth_handler)
+        # The Digest handler keeps nonce state and the controller serves one
+        # session; the display camera polls while data polls and commands run,
+        # so every request goes through this lock.
+        self._request_lock = threading.Lock()
+
+    def _request(self, url: str, data_request: bool = False) -> bytes:
+        """HTTP GET returning the body, one request at a time.
+
+        Raises:
+            SolvisAuthError: HTTP 401 (wrong credentials).
+            SolvisBusyError: HTTP 403 (session held by another client).
+            SolvisConnectionError: Network or timeout error.
+        """
+        try:
+            with self._request_lock, self._opener.open(url, timeout=self.timeout) as resp:
+                return resp.read()
+        except urllib.error.HTTPError as err:
+            if err.code == 401:
+                raise SolvisAuthError(
+                    f"Authentication rejected by {self.host} (HTTP 401)"
+                    if data_request
+                    else f"CGI auth rejected on {self.host} (HTTP 401)"
+                ) from err
+            if err.code == 403:
+                raise SolvisBusyError(
+                    f"{self.host} refused the request (HTTP 403), session busy"
+                    if data_request
+                    else f"CGI refused by {self.host} (HTTP 403), session busy"
+                ) from err
+            raise SolvisConnectionError(
+                f"HTTP error {err.code} from {self.host}"
+                if data_request
+                else f"CGI HTTP error {err.code} from {self.host}"
+            ) from err
+        except urllib.error.URLError as err:
+            raise SolvisConnectionError(
+                f"Cannot connect to {self.host}: {err.reason}"
+                if data_request
+                else f"CGI connection error to {self.host}: {err.reason}"
+            ) from err
+        except TimeoutError as err:
+            raise SolvisConnectionError(
+                f"Timeout connecting to {self.host}"
+                if data_request
+                else f"CGI timeout connecting to {self.host}"
+            ) from err
 
     def _url(self) -> str:
         """Build URL with cache-busting dummy parameter."""
@@ -228,36 +275,8 @@ class SolvisClient:
     # ------------------------------------------------------------------
 
     def _open_cgi(self, url: str) -> None:
-        """HTTP GET with response cleanup and error handling (shared helper).
-
-        Raises:
-            SolvisAuthError: HTTP 401 (wrong credentials).
-            SolvisBusyError: HTTP 403 (session held by another client).
-            SolvisConnectionError: Network or timeout error.
-        """
-        try:
-            with self._opener.open(url, timeout=self.timeout) as resp:
-                resp.read()
-        except urllib.error.HTTPError as err:
-            if err.code == 401:
-                raise SolvisAuthError(
-                    f"CGI auth rejected on {self.host} (HTTP 401)"
-                ) from err
-            if err.code == 403:
-                raise SolvisBusyError(
-                    f"CGI refused by {self.host} (HTTP 403), session busy"
-                ) from err
-            raise SolvisConnectionError(
-                f"CGI HTTP error {err.code} from {self.host}"
-            ) from err
-        except urllib.error.URLError as err:
-            raise SolvisConnectionError(
-                f"CGI connection error to {self.host}: {err.reason}"
-            ) from err
-        except TimeoutError as err:
-            raise SolvisConnectionError(
-                f"CGI timeout connecting to {self.host}"
-            ) from err
+        """HTTP GET for a CGI command (shared helper, see _request)."""
+        self._request(url)
 
     def send_button_press(self, button: str = "links") -> None:
         """Send a button press via Taster.CGI (display wake-up)."""
@@ -323,6 +342,22 @@ class SolvisClient:
         if reset:
             _step(self.send_touch, reset["x"], reset["y"])
 
+    def fetch_display(self) -> bytes:
+        """Fetch the current display content as BMP (240x128).
+
+        Raises:
+            SolvisAuthError, SolvisBusyError, SolvisConnectionError: see _request.
+            SolvisPayloadError: The response is not a BMP image.
+        """
+        url = (
+            f"{self.PROTOCOL}://{self.host}"
+            f"/display.bmp?{random.randint(10000000, 99999999)}"
+        )
+        body = self._request(url, data_request=True)
+        if not body.startswith(b"BM"):
+            raise SolvisPayloadError(f"display.bmp from {self.host} is not a BMP image")
+        return body
+
     # ------------------------------------------------------------------
     # Data fetch
     # ------------------------------------------------------------------
@@ -340,33 +375,10 @@ class SolvisClient:
             SolvisBusyError: HTTP 403 (session held by another client).
             SolvisPayloadError: XML parse error or payload too short.
         """
-        url = self._url()
-        try:
-            response = self._opener.open(url, timeout=self.timeout)
-        except urllib.error.HTTPError as err:
-            if err.code == 401:
-                raise SolvisAuthError(
-                    f"Authentication rejected by {self.host} (HTTP 401)"
-                ) from err
-            if err.code == 403:
-                raise SolvisBusyError(
-                    f"{self.host} refused the request (HTTP 403), session busy"
-                ) from err
-            raise SolvisConnectionError(
-                f"HTTP error {err.code} from {self.host}"
-            ) from err
-        except urllib.error.URLError as err:
-            raise SolvisConnectionError(
-                f"Cannot connect to {self.host}: {err.reason}"
-            ) from err
-        except TimeoutError as err:
-            raise SolvisConnectionError(
-                f"Timeout connecting to {self.host}"
-            ) from err
+        body = self._request(self._url(), data_request=True)
 
         try:
-            tree = ET.parse(response)
-            root = tree.getroot()
+            root = ET.fromstring(body)
             data_element = root.find("data")
             if data_element is None or data_element.text is None:
                 raise SolvisPayloadError(

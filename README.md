@@ -54,6 +54,8 @@ If you have information about the compatibility of an unlisted version, or encou
 - **Reauth Flow** — automatic re-authentication prompt on credential failure
 - **Options Flow** — change connection parameters (host, credentials) and scan interval at runtime
 - **Diagnostics** — downloadable debug data with redacted credentials
+- **CGI control** (optional) — select entities that switch settings by touching the display, e.g. the heating mode
+- **Remote display** — the controller display as a camera entity, plus admin services to touch it and press its two buttons (see below)
 - **Translations**: English and German
 
 ## Installation
@@ -126,9 +128,23 @@ All parameters (host, credentials, realm, scan interval) can be changed at any t
 - **Solar temperature delta** = Flow temperature solar (S5) − Return temperature (S6)
 - **Burner power** = 5.0 + Burner modulation (AO1) × 15.0 / 100.0 kW (when burner is on; 0 when off)
 
+## Remote Display
+
+Mirrors the controller's own remote page (`remote.html` on the SolvisRemote):
+
+- **Camera `Display`**: the current display (`display.bmp`, 240x128) as PNG. It is only fetched while someone looks; viewers share one fetch.
+- **Services** (admin only, require *CGI control* in the options; target the display camera):
+  - `solvis_remote.touch` — tap at `x`/`y`, hold for `duration` (0.5–10 s), release
+  - `solvis_remote.touch_down` / `solvis_remote.touch_up` — press and hold until released; a held touch is released automatically after 10 s
+  - `solvis_remote.press_button` — the buttons next to the display, `links` or `rechts`
+
+Coordinates are those of the display shown at double size (0–479 × 0–255), as the native page sends them. Like there, a touch is released at least 500 ms after the press, and a sleeping display swallows the first touch. While a touch is held, no other command (e.g. a CGI select) runs.
+
+The interactive card is part of the [Solvis Lovelace card](https://github.com/othorg/solvis-home-assistant-lovelace-card) (`custom:solvis-remote-card`).
+
 ## Known Limitations
 
-- **Read-only**: This integration monitors sensor data only. It does not write values or control the heating system.
+- **Control by touch**: Settings are changed by touching the display (CGI), not through a documented API. The touch positions depend on the controller's screens and firmware.
 - **SC2/SolvisRemote only**: Designed for the SolvisRemote HTTP protocol. SC3 and Modbus-based setups are not supported by this integration.
 - **Entity names**: Due to the wide range of Solvis configuration options, some entity names may be inaccurate for less common setups (e.g. district heating, external boilers, swimming pool circuits, east/west solar configurations). If you encounter such cases, feedback with a description of your system is welcome via [GitHub Issues](https://github.com/othorg/solvis-ha-integration/issues).
 

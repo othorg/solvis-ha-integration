@@ -132,6 +132,45 @@
     },
     "image": {
       "anlagenschema": { "name": "System diagram" }
+    },
+    "camera": {
+      "display": { "name": "Display" }
+    }
+  },
+  "services": {
+    "touch": {
+      "name": "Touch display",
+      "description": "Taps the Solvis display at a position (coordinates of the display shown at double size, 480x256), holds and releases. Requires CGI control.",
+      "fields": {
+        "entity_id": { "name": "Display", "description": "Solvis display camera." },
+        "x": { "name": "X", "description": "Horizontal position, 0-479." },
+        "y": { "name": "Y", "description": "Vertical position, 0-255." },
+        "duration": { "name": "Duration", "description": "How long the touch is held (0.5-10 s)." }
+      }
+    },
+    "touch_down": {
+      "name": "Press display",
+      "description": "Presses the Solvis display and holds until 'Release display'. Released automatically after 10 s. Requires CGI control.",
+      "fields": {
+        "entity_id": { "name": "Display", "description": "Solvis display camera." },
+        "x": { "name": "X", "description": "Horizontal position, 0-479." },
+        "y": { "name": "Y", "description": "Vertical position, 0-255." }
+      }
+    },
+    "touch_up": {
+      "name": "Release display",
+      "description": "Releases a touch held with 'Press display'.",
+      "fields": {
+        "entity_id": { "name": "Display", "description": "Solvis display camera." }
+      }
+    },
+    "press_button": {
+      "name": "Press button",
+      "description": "Presses one of the two buttons next to the Solvis display. Requires CGI control.",
+      "fields": {
+        "entity_id": { "name": "Display", "description": "Solvis display camera." },
+        "button": { "name": "Button", "description": "links (left) or rechts (right)." }
+      }
     }
   }
 }

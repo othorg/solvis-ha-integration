@@ -132,6 +132,45 @@
     },
     "image": {
       "anlagenschema": { "name": "Anlagenschema" }
+    },
+    "camera": {
+      "display": { "name": "Display" }
+    }
+  },
+  "services": {
+    "touch": {
+      "name": "Display antippen",
+      "description": "Tippt das Solvis-Display an einer Stelle an (Koordinaten des doppelt gross dargestellten Displays, 480x256), haelt und laesst los. Erfordert die CGI-Steuerung.",
+      "fields": {
+        "entity_id": { "name": "Display", "description": "Solvis-Display-Kamera." },
+        "x": { "name": "X", "description": "Waagerechte Position, 0-479." },
+        "y": { "name": "Y", "description": "Senkrechte Position, 0-255." },
+        "duration": { "name": "Dauer", "description": "Wie lange gedrueckt wird (0,5-10 s)." }
+      }
+    },
+    "touch_down": {
+      "name": "Display druecken",
+      "description": "Drueckt das Solvis-Display und haelt bis 'Display loslassen'. Nach 10 s wird automatisch losgelassen. Erfordert die CGI-Steuerung.",
+      "fields": {
+        "entity_id": { "name": "Display", "description": "Solvis-Display-Kamera." },
+        "x": { "name": "X", "description": "Waagerechte Position, 0-479." },
+        "y": { "name": "Y", "description": "Senkrechte Position, 0-255." }
+      }
+    },
+    "touch_up": {
+      "name": "Display loslassen",
+      "description": "Laesst eine mit 'Display druecken' gehaltene Beruehrung los.",
+      "fields": {
+        "entity_id": { "name": "Display", "description": "Solvis-Display-Kamera." }
+      }
+    },
+    "press_button": {
+      "name": "Taste druecken",
+      "description": "Drueckt eine der beiden Tasten neben dem Solvis-Display. Erfordert die CGI-Steuerung.",
+      "fields": {
+        "entity_id": { "name": "Display", "description": "Solvis-Display-Kamera." },
+        "button": { "name": "Taste", "description": "links oder rechts." }
+      }
     }
   }
 }

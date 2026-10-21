@@ -6,6 +6,7 @@ import asyncio
 import logging
 import random
 import time as time_mod
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 
@@ -27,6 +28,9 @@ from .const import (
     CGI_SECTIONS,
     CONF_CGI_PROFILES,
     DEFAULT_CGI_PROFILES,
+    TOUCH_MAX_HOLD,
+    TOUCH_MIN_HOLD,
+    TOUCH_RELEASE,
 )
 
 logger = logging.getLogger(__name__)
@@ -40,6 +44,20 @@ def _busy_delay() -> float:
     single session the controller offers, so spread the retries out.
     """
     return BUSY_RETRY_DELAY * random.uniform(0.5, 1.5)
+
+
+@dataclass
+class _Gesture:
+    """A touch held on the display between touch_down and touch_up.
+
+    While it is held the gesture owns the command lock, so no CGI profile
+    sequence or other command can land between press and release.
+    """
+
+    locked: bool = False
+    started: float = 0.0
+    release_requested: bool = False
+    watchdog: asyncio.TimerHandle | None = None
 
 
 class SolvisDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -64,6 +82,7 @@ class SolvisDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.system_id = system_id
         self._command_lock = asyncio.Lock()
         self._last_command_time: float = 0
+        self._gesture: _Gesture | None = None
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from the controller and compute derived values."""
@@ -170,6 +189,135 @@ class SolvisDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         f"CGI auth failed: {err}"
                     ) from err
             self._last_command_time = time_mod.monotonic()
+
+    # ------------------------------------------------------------------
+    # Remote display: touch and buttons (like the controller's remote.html)
+    # ------------------------------------------------------------------
+
+    def _raise_if_operated(self) -> None:
+        """Refuse a command while someone holds a touch on the display."""
+        if self._gesture is not None:
+            raise HomeAssistantError("The Solvis display is being operated")
+
+    async def _async_wait_cooldown(self) -> None:
+        """Keep at least 500 ms between two commands."""
+        elapsed = time_mod.monotonic() - self._last_command_time
+        if elapsed < 0.5:
+            await asyncio.sleep(0.5 - elapsed)
+
+    async def _async_send(self, func: Any, *args: Any) -> None:
+        """Run one client command in the executor, mapped to HA errors.
+
+        Not retried: a touch that is sent twice is tapped twice.
+        """
+        try:
+            await self.hass.async_add_executor_job(func, *args)
+        except SolvisAuthError as err:
+            raise ConfigEntryAuthFailed(f"CGI auth failed: {err}") from err
+        except (SolvisBusyError, SolvisConnectionError) as err:
+            raise HomeAssistantError(f"Solvis command failed: {err}") from err
+
+    async def _async_release_touch(self) -> None:
+        """Release the touch, retrying once; a failure can only be logged."""
+        for attempt in (1, 2):
+            try:
+                await self.hass.async_add_executor_job(
+                    self.client.send_touch, TOUCH_RELEASE["x"], TOUCH_RELEASE["y"]
+                )
+                return
+            except (SolvisAuthError, SolvisBusyError, SolvisConnectionError) as err:
+                if attempt == 2:
+                    logger.warning("Could not release the Solvis display touch: %s", err)
+                    return
+                await asyncio.sleep(TOUCH_MIN_HOLD)
+
+    async def async_touch(self, x: int, y: int, duration: float = TOUCH_MIN_HOLD) -> None:
+        """Tap the display: press, hold for `duration`, release."""
+        self._raise_if_operated()
+        async with self._command_lock:
+            await self._async_wait_cooldown()
+            try:
+                await self._async_send(self.client.send_touch, x, y)
+                await asyncio.sleep(max(duration, TOUCH_MIN_HOLD))
+            finally:
+                await asyncio.shield(self._async_release_touch())
+                self._last_command_time = time_mod.monotonic()
+
+    async def async_touch_down(self, x: int, y: int) -> None:
+        """Press the display and hold until async_touch_up or the watchdog."""
+        self._raise_if_operated()
+        gesture = self._gesture = _Gesture()
+        try:
+            await self._command_lock.acquire()
+        except asyncio.CancelledError:
+            self._gesture = None
+            raise
+        gesture.locked = True
+        try:
+            await self._async_wait_cooldown()
+            await self._async_send(self.client.send_touch, x, y)
+        except BaseException:
+            # The press may have reached the controller (lost response).
+            await asyncio.shield(self._async_release_touch())
+            self._gesture = None
+            self._last_command_time = time_mod.monotonic()
+            self._command_lock.release()
+            raise
+        gesture.started = time_mod.monotonic()
+        if gesture.release_requested:
+            await self._async_finish_gesture(gesture)
+            return
+        gesture.watchdog = self.hass.loop.call_later(
+            TOUCH_MAX_HOLD,
+            lambda: self.hass.async_create_task(self._async_finish_gesture(gesture)),
+        )
+
+    async def async_touch_up(self) -> None:
+        """Release the held touch; without one this does nothing."""
+        gesture = self._gesture
+        if gesture is None:
+            return
+        if not gesture.started:
+            # The press is still on its way; touch_down releases right after.
+            gesture.release_requested = True
+            return
+        await self._async_finish_gesture(gesture)
+
+    async def _async_finish_gesture(self, gesture: _Gesture) -> None:
+        """Release a pressed gesture once: keep the minimum hold, free the lock."""
+        if self._gesture is not gesture:
+            return
+        self._gesture = None
+        if gesture.watchdog is not None:
+            gesture.watchdog.cancel()
+        try:
+            remaining = TOUCH_MIN_HOLD - (time_mod.monotonic() - gesture.started)
+            if remaining > 0:
+                await asyncio.sleep(remaining)
+            await asyncio.shield(self._async_release_touch())
+        finally:
+            self._last_command_time = time_mod.monotonic()
+            self._command_lock.release()
+
+    async def async_press_button(self, button: str) -> None:
+        """Press one of the two hardware buttons next to the display."""
+        self._raise_if_operated()
+        async with self._command_lock:
+            await self._async_wait_cooldown()
+            try:
+                await self._async_send(self.client.send_button_press, button)
+            finally:
+                self._last_command_time = time_mod.monotonic()
+
+    async def async_shutdown(self) -> None:
+        """Release a touch that is still held when the entry unloads."""
+        gesture = self._gesture
+        if gesture is not None:
+            if gesture.started:
+                await self._async_finish_gesture(gesture)
+            else:
+                gesture.release_requested = True
+        await super().async_shutdown()
 
     def _compute_derived(self, data: dict[str, Any]) -> None:
         """Add computed sensors (delta_s5s6, brennerleistung) to data dict."""

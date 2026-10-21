@@ -5,10 +5,19 @@ from __future__ import annotations
 from functools import partial
 import logging
 
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_HOST, CONF_USERNAME, CONF_PASSWORD
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+import voluptuous as vol
+
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
+from homeassistant.const import ATTR_ENTITY_ID, CONF_HOST, CONF_USERNAME, CONF_PASSWORD
+from homeassistant.core import HomeAssistant, ServiceCall, callback
+from homeassistant.exceptions import (
+    ConfigEntryAuthFailed,
+    ConfigEntryNotReady,
+    ServiceValidationError,
+)
+from homeassistant.helpers import config_validation as cv, entity_registry as er
+from homeassistant.helpers.service import async_register_admin_service
+from homeassistant.helpers.typing import ConfigType
 
 from .client import (
     SolvisClient,
@@ -18,16 +27,92 @@ from .client import (
     SolvisPayloadError,
 )
 from .const import (
+    BUTTONS,
+    CONF_ENABLE_CGI,
     CONF_REALM,
     CONF_SCAN_INTERVAL,
     DEFAULT_REALM,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_TIMEOUT,
+    DISPLAY_HEIGHT,
+    DISPLAY_WIDTH,
+    DOMAIN,
     PLATFORMS,
+    SERVICE_PRESS_BUTTON,
+    SERVICE_TOUCH,
+    SERVICE_TOUCH_DOWN,
+    SERVICE_TOUCH_UP,
+    TOUCH_MAX_HOLD,
+    TOUCH_MIN_HOLD,
+    TOUCH_SCALE,
 )
 from .coordinator import SolvisDataUpdateCoordinator
 
 logger = logging.getLogger(__name__)
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+# Services target the display camera; it identifies the controller.
+_TARGET = {vol.Required(ATTR_ENTITY_ID): vol.All(cv.entity_ids, vol.Length(min=1, max=1))}
+_X = vol.All(vol.Coerce(int), vol.Range(min=0, max=DISPLAY_WIDTH * TOUCH_SCALE - 1))
+_Y = vol.All(vol.Coerce(int), vol.Range(min=0, max=DISPLAY_HEIGHT * TOUCH_SCALE - 1))
+TOUCH_SCHEMA = vol.Schema(
+    {
+        **_TARGET,
+        vol.Required("x"): _X,
+        vol.Required("y"): _Y,
+        vol.Optional("duration", default=TOUCH_MIN_HOLD): vol.All(
+            vol.Coerce(float), vol.Range(min=TOUCH_MIN_HOLD, max=TOUCH_MAX_HOLD)
+        ),
+    }
+)
+TOUCH_DOWN_SCHEMA = vol.Schema({**_TARGET, vol.Required("x"): _X, vol.Required("y"): _Y})
+TOUCH_UP_SCHEMA = vol.Schema(_TARGET)
+PRESS_BUTTON_SCHEMA = vol.Schema({**_TARGET, vol.Required("button"): vol.In(BUTTONS)})
+
+
+@callback
+def _coordinator_for(hass: HomeAssistant, call: ServiceCall) -> SolvisDataUpdateCoordinator:
+    """Resolve the targeted display camera to its loaded, CGI-enabled entry."""
+    entity_id = call.data[ATTR_ENTITY_ID][0]
+    reg_entry = er.async_get(hass).async_get(entity_id)
+    if reg_entry is None or reg_entry.platform != DOMAIN or reg_entry.domain != "camera":
+        raise ServiceValidationError(f"{entity_id} is not a Solvis display")
+    entry = hass.config_entries.async_get_entry(reg_entry.config_entry_id or "")
+    if entry is None or entry.state is not ConfigEntryState.LOADED:
+        raise ServiceValidationError(f"The Solvis entry of {entity_id} is not loaded")
+    if not entry.options.get(CONF_ENABLE_CGI, False):
+        raise ServiceValidationError(
+            "CGI control is disabled in the Solvis options; enable it to operate the display"
+        )
+    return entry.runtime_data
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Register the remote display services (admin only)."""
+
+    async def _touch(call: ServiceCall) -> None:
+        await _coordinator_for(hass, call).async_touch(
+            call.data["x"], call.data["y"], call.data["duration"]
+        )
+
+    async def _touch_down(call: ServiceCall) -> None:
+        await _coordinator_for(hass, call).async_touch_down(call.data["x"], call.data["y"])
+
+    async def _touch_up(call: ServiceCall) -> None:
+        await _coordinator_for(hass, call).async_touch_up()
+
+    async def _press_button(call: ServiceCall) -> None:
+        await _coordinator_for(hass, call).async_press_button(call.data["button"])
+
+    for name, handler, schema in (
+        (SERVICE_TOUCH, _touch, TOUCH_SCHEMA),
+        (SERVICE_TOUCH_DOWN, _touch_down, TOUCH_DOWN_SCHEMA),
+        (SERVICE_TOUCH_UP, _touch_up, TOUCH_UP_SCHEMA),
+        (SERVICE_PRESS_BUTTON, _press_button, PRESS_BUTTON_SCHEMA),
+    ):
+        async_register_admin_service(hass, DOMAIN, name, handler, schema)
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

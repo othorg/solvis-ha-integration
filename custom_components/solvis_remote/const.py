@@ -22,7 +22,13 @@ from homeassistant.const import (
 )
 
 DOMAIN = "solvis_remote"
-PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.SELECT, Platform.IMAGE]
+PLATFORMS = [
+    Platform.SENSOR,
+    Platform.BINARY_SENSOR,
+    Platform.SELECT,
+    Platform.IMAGE,
+    Platform.CAMERA,
+]
 
 CONF_REALM = "realm"
 CONF_SCAN_INTERVAL = "scan_interval"
@@ -53,6 +59,24 @@ CGI_COORD_MAX = 800
 # CGI timing constants
 CGI_SECTION_DELAY = 0.5  # Pause after section touch (seconds)
 CGI_TOUCH_DELAY = 0.5    # Pause after option touch (seconds)
+
+# Remote display, modelled on the controller's own remote.html page:
+# display.bmp is 240x128; Touch.CGI takes coordinates of the display shown
+# at double size (480x256). A touch is released by touching 510/510, and the
+# page never releases earlier than 500 ms after the press.
+DISPLAY_WIDTH = 240
+DISPLAY_HEIGHT = 128
+TOUCH_SCALE = 2
+TOUCH_RELEASE = {"x": 510, "y": 510}
+TOUCH_MIN_HOLD = 0.5  # seconds
+TOUCH_MAX_HOLD = 10.0  # seconds; a held touch is released after this
+DISPLAY_FRAME_MAX_AGE = 0.4  # seconds a fetched frame is shared by viewers
+BUTTONS = ("links", "rechts")
+
+SERVICE_TOUCH = "touch"
+SERVICE_TOUCH_DOWN = "touch_down"
+SERVICE_TOUCH_UP = "touch_up"
+SERVICE_PRESS_BUTTON = "press_button"
 
 # CGI menu sections (SolvisRemote hierarchical menu)
 CGI_SECTIONS: dict[str, dict] = {
