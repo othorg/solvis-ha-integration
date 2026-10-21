@@ -132,7 +132,7 @@ All parameters (host, credentials, realm, scan interval) can be changed at any t
 
 Mirrors the controller's own remote page (`remote.html` on the SolvisRemote):
 
-- **Camera `Display`**: the current display (`display.bmp`, 240x128) as PNG. It is only fetched while someone looks; viewers share one fetch.
+- **Camera `Display`**: the current display (`display.bmp`, 240x128) as JPEG at double size (480x256), as still image or Motion JPEG stream. It is only fetched while someone looks; viewers share one fetch.
 - **Services** (admin only, require *CGI control* in the options; target the display camera):
   - `solvis_remote.touch` — tap at `x`/`y`, hold for `duration` (0.5–10 s), release
   - `solvis_remote.touch_down` / `solvis_remote.touch_up` — press and hold until released; a held touch is released automatically after 10 s

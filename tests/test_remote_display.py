@@ -17,7 +17,7 @@ from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.solvis_remote import coordinator as coordinator_module
-from custom_components.solvis_remote.camera import SolvisDisplayCamera, bmp_to_png
+from custom_components.solvis_remote.camera import SolvisDisplayCamera, bmp_to_jpeg
 from custom_components.solvis_remote.client import (
     SolvisBusyError,
     SolvisClient,
@@ -131,15 +131,20 @@ class TestClientDisplay:
 
 
 class TestDisplayCamera:
-    def test_bmp_to_png_keeps_native_size(self) -> None:
-        with Image.open(BytesIO(bmp_to_png(_bmp()))) as img:
-            assert img.format == "PNG"
-            assert img.size == (240, 128)
+    def test_bmp_to_jpeg_doubles_the_display(self) -> None:
+        with Image.open(BytesIO(bmp_to_jpeg(_bmp()))) as img:
+            assert img.format == "JPEG"
+            assert img.size == (480, 256)
 
-    async def test_served_as_png(self, hass: HomeAssistant) -> None:
-        """HA sends content_type as the HTTP header; Camera defaults to JPEG."""
-        coordinator, _client = _coordinator(hass)
-        assert SolvisDisplayCamera(coordinator).content_type == "image/png"
+    async def test_header_matches_the_frames(self, hass: HomeAssistant) -> None:
+        """HA sends content_type as the HTTP header and in the MJPEG stream parts."""
+        coordinator, client = _coordinator(hass)
+        client.fetch_display.return_value = _bmp()
+        camera = SolvisDisplayCamera(coordinator)
+        camera.hass = hass
+        frame = await camera.async_camera_image()
+        assert camera.content_type == "image/jpeg"
+        assert frame is not None and frame.startswith(b"\xff\xd8")
 
     async def test_viewers_share_one_fetch(self, hass: HomeAssistant) -> None:
         coordinator, client = _coordinator(hass)
@@ -156,7 +161,7 @@ class TestDisplayCamera:
         camera.hass = hass
         frames = await asyncio.gather(*(camera.async_camera_image() for _ in range(3)))
         assert calls == 1
-        assert all(frame and frame.startswith(b"\x89PNG") for frame in frames)
+        assert all(frame and frame.startswith(b"\xff\xd8") for frame in frames)
         # A frame younger than the max age is reused, too.
         await camera.async_camera_image()
         assert calls == 1

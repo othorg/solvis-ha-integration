@@ -1,7 +1,7 @@
 """Camera platform for the Solvis Heating integration (remote display).
 
-Shows the controller's display like its own remote.html page does. The
-frontend polls still images; HA only fetches while someone looks.
+Shows the controller's display like its own remote.html page does. HA only
+fetches while someone looks (still images or the MJPEG stream).
 """
 
 from __future__ import annotations
@@ -26,17 +26,27 @@ from .client import (
     SolvisConnectionError,
     SolvisPayloadError,
 )
-from .const import DISPLAY_FRAME_MAX_AGE, DOMAIN, MANUFACTURER, MODEL
+from .const import DISPLAY_FRAME_MAX_AGE, DOMAIN, MANUFACTURER, MODEL, TOUCH_SCALE
 from .coordinator import SolvisDataUpdateCoordinator
 
 logger = logging.getLogger(__name__)
 
 
-def bmp_to_png(bmp: bytes) -> bytes:
-    """Convert the controller's 4-bit BMP to PNG at its native 240x128."""
+def bmp_to_jpeg(bmp: bytes) -> bytes:
+    """Convert the controller's 4-bit BMP to JPEG at double size (480x256).
+
+    JPEG because HA's camera stream is Motion JPEG (browsers show no PNG
+    frames in it) and HA only scales JPEG. Doubled with nearest neighbour,
+    the size the native page shows, so text stays sharp when browsers
+    smooth the upscaling; no chroma subsampling for the same reason.
+    """
     with Image.open(BytesIO(bmp)) as img:
+        rgb = img.convert("RGB")
+        doubled = rgb.resize(
+            (rgb.width * TOUCH_SCALE, rgb.height * TOUCH_SCALE), Image.Resampling.NEAREST
+        )
         buf = BytesIO()
-        img.convert("RGB").save(buf, format="PNG")
+        doubled.save(buf, format="JPEG", quality=90, subsampling=0)
     return buf.getvalue()
 
 
@@ -58,9 +68,8 @@ class SolvisDisplayCamera(CoordinatorEntity[SolvisDataUpdateCoordinator], Camera
 
     def __init__(self, coordinator: SolvisDataUpdateCoordinator) -> None:
         super().__init__(coordinator)
+        # Sets content_type to image/jpeg, the format bmp_to_jpeg delivers.
         Camera.__init__(self)
-        # Camera.__init__ sets content_type to JPEG; it is sent as the HTTP header.
-        self.content_type = "image/png"
         self._attr_unique_id = f"{coordinator.system_id}_display"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, coordinator.system_id)},
@@ -75,7 +84,7 @@ class SolvisDisplayCamera(CoordinatorEntity[SolvisDataUpdateCoordinator], Camera
     async def async_camera_image(
         self, width: int | None = None, height: int | None = None
     ) -> bytes | None:
-        """Return the current display as PNG, or None if it cannot be read.
+        """Return the current display as JPEG, or None if it cannot be read.
 
         Viewers asking within DISPLAY_FRAME_MAX_AGE share a frame, and a
         running fetch is awaited instead of starting a second one.
@@ -91,7 +100,7 @@ class SolvisDisplayCamera(CoordinatorEntity[SolvisDataUpdateCoordinator], Camera
             bmp = await self.hass.async_add_executor_job(
                 self.coordinator.client.fetch_display
             )
-            frame = await self.hass.async_add_executor_job(bmp_to_png, bmp)
+            frame = await self.hass.async_add_executor_job(bmp_to_jpeg, bmp)
             self._frame, self._frame_time = frame, time.monotonic()
         except (
             SolvisAuthError,
