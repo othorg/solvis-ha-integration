@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,28 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 def auto_enable_custom_integrations(enable_custom_integrations):
     """Enable custom integrations for all tests."""
     yield
+
+
+@pytest.fixture(autouse=True)
+def fail_on_ha_deprecation_reports(caplog: pytest.LogCaptureFixture):
+    """Fail a test if HA reports deprecated usage by this integration.
+
+    HA logs these reports instead of raising, so a plain test run passes.
+    Covers setup and call; import-time reports happen during collection.
+    """
+    yield
+    reports = [
+        record.getMessage()
+        for when in ("setup", "call")
+        for record in caplog.get_records(when)
+        if record.levelno >= logging.WARNING
+        and "solvis_remote" in record.getMessage()
+        and (
+            "Detected that custom integration" in record.getMessage()
+            or "deprecated" in record.getMessage().lower()
+        )
+    ]
+    assert not reports, f"HA reported deprecated usage: {reports}"
 
 
 @pytest.fixture

@@ -20,6 +20,8 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
         run: pip install -r requirements_dev.txt
+      - name: Show tested Home Assistant version
+        run: python -c "import homeassistant.const as c; print('Home Assistant', c.__version__)"
       - name: Run tests
         run: pytest tests/ -v
       - name: Syntax check
