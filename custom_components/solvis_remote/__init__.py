@@ -66,8 +66,13 @@ TOUCH_SCHEMA = vol.Schema(
         ),
     }
 )
-TOUCH_DOWN_SCHEMA = vol.Schema({**_TARGET, vol.Required("x"): _X, vol.Required("y"): _Y})
-TOUCH_UP_SCHEMA = vol.Schema(_TARGET)
+# A frontend passes the same gesture_id to touch_down and touch_up, so a
+# release can only end the touch it belongs to.
+_GESTURE_ID = {vol.Optional("gesture_id"): vol.All(cv.string, vol.Length(max=64))}
+TOUCH_DOWN_SCHEMA = vol.Schema(
+    {**_TARGET, **_GESTURE_ID, vol.Required("x"): _X, vol.Required("y"): _Y}
+)
+TOUCH_UP_SCHEMA = vol.Schema({**_TARGET, **_GESTURE_ID})
 PRESS_BUTTON_SCHEMA = vol.Schema({**_TARGET, vol.Required("button"): vol.In(BUTTONS)})
 
 
@@ -97,10 +102,12 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         )
 
     async def _touch_down(call: ServiceCall) -> None:
-        await _coordinator_for(hass, call).async_touch_down(call.data["x"], call.data["y"])
+        await _coordinator_for(hass, call).async_touch_down(
+            call.data["x"], call.data["y"], call.data.get("gesture_id")
+        )
 
     async def _touch_up(call: ServiceCall) -> None:
-        await _coordinator_for(hass, call).async_touch_up()
+        await _coordinator_for(hass, call).async_touch_up(call.data.get("gesture_id"))
 
     async def _press_button(call: ServiceCall) -> None:
         await _coordinator_for(hass, call).async_press_button(call.data["button"])

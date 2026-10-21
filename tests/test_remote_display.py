@@ -136,6 +136,11 @@ class TestDisplayCamera:
             assert img.format == "PNG"
             assert img.size == (240, 128)
 
+    async def test_served_as_png(self, hass: HomeAssistant) -> None:
+        """HA sends content_type as the HTTP header; Camera defaults to JPEG."""
+        coordinator, _client = _coordinator(hass)
+        assert SolvisDisplayCamera(coordinator).content_type == "image/png"
+
     async def test_viewers_share_one_fetch(self, hass: HomeAssistant) -> None:
         coordinator, client = _coordinator(hass)
         calls = 0
@@ -183,6 +188,8 @@ class TestTouchGestures:
         coordinator, client = _coordinator(hass)
         await coordinator.async_touch(120, 218, 0.01)
         assert _touches(client) == [(120, 218), RELEASE]
+        assert coordinator._gesture is None
+        assert not coordinator._command_lock.locked()
 
     async def test_tap_releases_when_press_fails(self, hass: HomeAssistant) -> None:
         """A press whose response got lost may have landed: release anyway."""
@@ -192,6 +199,25 @@ class TestTouchGestures:
             await coordinator.async_touch(120, 218)
         assert _touches(client) == [(120, 218), RELEASE]
         assert not coordinator._command_lock.locked()
+
+    async def test_release_keeps_minimum_hold_after_failed_press(
+        self, hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(coordinator_module, "TOUCH_MIN_HOLD", 0.1)
+        coordinator, client = _coordinator(hass)
+        times: list[float] = []
+
+        def touch(x: int, y: int) -> None:
+            times.append(time.monotonic())
+            if len(times) == 1:
+                raise SolvisConnectionError("response lost")
+
+        client.send_touch.side_effect = touch
+        with pytest.raises(HomeAssistantError):
+            await coordinator.async_touch_down(300, 100)
+        await hass.async_block_till_done()
+        assert len(times) == 2
+        assert times[1] - times[0] >= 0.09
 
     async def test_hold_and_release(self, hass: HomeAssistant) -> None:
         coordinator, client = _coordinator(hass)
@@ -219,6 +245,25 @@ class TestTouchGestures:
         await command
         assert order == ["touch 300/100", "touch 510/510", "sequence"]
 
+    async def test_cancelled_release_call_still_releases(self, hass: HomeAssistant) -> None:
+        """A dropped frontend connection must not leave the touch held."""
+        coordinator, client = _coordinator(hass)
+        order: list[str] = []
+        client.send_touch.side_effect = lambda x, y: order.append(f"touch {x}/{y}")
+        client.execute_cgi_sequence.side_effect = lambda seq: order.append("sequence")
+
+        await coordinator.async_touch_down(300, 100)
+        gesture_task = coordinator._gesture.task
+        up = hass.async_create_task(coordinator.async_touch_up())
+        command = hass.async_create_task(
+            coordinator.async_execute_cgi_command("heating_mode", "night")
+        )
+        await asyncio.sleep(0)
+        up.cancel()
+        await gesture_task
+        await command
+        assert order == ["touch 300/100", "touch 510/510", "sequence"]
+
     async def test_watchdog_releases_forgotten_touch(self, hass: HomeAssistant) -> None:
         coordinator, client = _coordinator(hass)
         await coordinator.async_touch_down(300, 100)
@@ -232,12 +277,15 @@ class TestTouchGestures:
 
     async def test_second_viewer_is_refused_while_held(self, hass: HomeAssistant) -> None:
         coordinator, client = _coordinator(hass)
-        await coordinator.async_touch_down(300, 100)
+        await coordinator.async_touch_down(300, 100, "viewer-1")
         with pytest.raises(HomeAssistantError, match="being operated"):
-            await coordinator.async_touch_down(10, 10)
+            await coordinator.async_touch_down(10, 10, "viewer-2")
         with pytest.raises(HomeAssistantError, match="being operated"):
             await coordinator.async_press_button("links")
-        await coordinator.async_touch_up()
+        # The refused viewer's release must not end viewer 1's touch.
+        await coordinator.async_touch_up("viewer-2")
+        assert _touches(client) == [(300, 100)]
+        await coordinator.async_touch_up("viewer-1")
         assert _touches(client) == [(300, 100), RELEASE]
 
     async def test_release_requested_while_press_pending(self, hass: HomeAssistant) -> None:
@@ -246,9 +294,12 @@ class TestTouchGestures:
         await coordinator._command_lock.acquire()  # something else is running
         down = hass.async_create_task(coordinator.async_touch_down(300, 100))
         await asyncio.sleep(0.01)
-        await coordinator.async_touch_up()
+        up = hass.async_create_task(coordinator.async_touch_up())
+        await asyncio.sleep(0.01)
+        client.send_touch.assert_not_called()
         coordinator._command_lock.release()
         await down
+        await up
         assert _touches(client) == [(300, 100), RELEASE]
         assert coordinator._gesture is None
         assert not coordinator._command_lock.locked()
@@ -258,6 +309,7 @@ class TestTouchGestures:
         client.send_touch.side_effect = [SolvisBusyError("403"), None]
         with pytest.raises(HomeAssistantError):
             await coordinator.async_touch_down(300, 100)
+        await hass.async_block_till_done()
         assert coordinator._gesture is None
         assert not coordinator._command_lock.locked()
 
@@ -271,6 +323,23 @@ class TestTouchGestures:
         await coordinator.async_touch_down(300, 100)
         await coordinator.async_shutdown()
         assert _touches(client) == [(300, 100), RELEASE]
+        with pytest.raises(HomeAssistantError, match="unloading"):
+            await coordinator.async_touch(1, 1)
+
+    async def test_shutdown_drains_pending_press(self, hass: HomeAssistant) -> None:
+        """Nothing may reach the controller after shutdown returned."""
+        coordinator, client = _coordinator(hass)
+        await coordinator._command_lock.acquire()
+        hass.async_create_task(coordinator.async_touch_down(300, 100))
+        await asyncio.sleep(0.01)
+        shutdown = hass.async_create_task(coordinator.async_shutdown())
+        await asyncio.sleep(0.01)
+        coordinator._command_lock.release()
+        await shutdown
+        calls_at_shutdown = list(_touches(client))
+        await asyncio.sleep(0.05)
+        await hass.async_block_till_done()
+        assert _touches(client) == calls_at_shutdown == [(300, 100), RELEASE]
 
     async def test_press_button(self, hass: HomeAssistant) -> None:
         coordinator, client = _coordinator(hass)
@@ -314,14 +383,19 @@ class TestServices:
             patch.object(SolvisDataUpdateCoordinator, "async_press_button", AsyncMock()) as button,
         ):
             await hass.services.async_call(
-                DOMAIN, "touch_down", {"entity_id": entity_id, "x": 1, "y": 2}, blocking=True
+                DOMAIN,
+                "touch_down",
+                {"entity_id": entity_id, "x": 1, "y": 2, "gesture_id": "g1"},
+                blocking=True,
             )
-            await hass.services.async_call(DOMAIN, "touch_up", {"entity_id": entity_id}, blocking=True)
+            await hass.services.async_call(
+                DOMAIN, "touch_up", {"entity_id": entity_id, "gesture_id": "g1"}, blocking=True
+            )
             await hass.services.async_call(
                 DOMAIN, "press_button", {"entity_id": entity_id, "button": "links"}, blocking=True
             )
-        down.assert_awaited_once_with(1, 2)
-        up.assert_awaited_once_with()
+        down.assert_awaited_once_with(1, 2, "g1")
+        up.assert_awaited_once_with("g1")
         button.assert_awaited_once_with("links")
 
     async def test_coordinates_are_bounded(self, hass: HomeAssistant) -> None:

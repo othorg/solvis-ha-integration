@@ -6,7 +6,7 @@ import asyncio
 import logging
 import random
 import time as time_mod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
 
@@ -48,16 +48,17 @@ def _busy_delay() -> float:
 
 @dataclass
 class _Gesture:
-    """A touch held on the display between touch_down and touch_up.
+    """A touch on the display, run by one coordinator task.
 
-    While it is held the gesture owns the command lock, so no CGI profile
-    sequence or other command can land between press and release.
+    The task owns the command lock from the press until the release has been
+    sent, so no CGI profile sequence or other command lands in between, and
+    cancelling a service call never skips the release.
     """
 
-    locked: bool = False
-    started: float = 0.0
-    release_requested: bool = False
-    watchdog: asyncio.TimerHandle | None = None
+    gesture_id: str | None
+    released: asyncio.Event = field(default_factory=asyncio.Event)
+    pressed: asyncio.Future[None] | None = None
+    task: asyncio.Task[None] | None = None
 
 
 class SolvisDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -83,6 +84,7 @@ class SolvisDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._command_lock = asyncio.Lock()
         self._last_command_time: float = 0
         self._gesture: _Gesture | None = None
+        self._closing = False
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from the controller and compute derived values."""
@@ -195,7 +197,9 @@ class SolvisDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     # ------------------------------------------------------------------
 
     def _raise_if_operated(self) -> None:
-        """Refuse a command while someone holds a touch on the display."""
+        """Refuse a command while a touch is in progress or the entry unloads."""
+        if self._closing:
+            raise HomeAssistantError("The Solvis integration is unloading")
         if self._gesture is not None:
             raise HomeAssistantError("The Solvis display is being operated")
 
@@ -231,73 +235,102 @@ class SolvisDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     return
                 await asyncio.sleep(TOUCH_MIN_HOLD)
 
-    async def async_touch(self, x: int, y: int, duration: float = TOUCH_MIN_HOLD) -> None:
-        """Tap the display: press, hold for `duration`, release."""
-        self._raise_if_operated()
-        async with self._command_lock:
-            await self._async_wait_cooldown()
-            try:
-                await self._async_send(self.client.send_touch, x, y)
-                await asyncio.sleep(max(duration, TOUCH_MIN_HOLD))
-            finally:
-                await asyncio.shield(self._async_release_touch())
-                self._last_command_time = time_mod.monotonic()
+    async def _async_run_gesture(
+        self, gesture: _Gesture, x: int, y: int, hold: float | None
+    ) -> None:
+        """Press, hold for `hold` seconds or until released, then release.
 
-    async def async_touch_down(self, x: int, y: int) -> None:
-        """Press the display and hold until async_touch_up or the watchdog."""
-        self._raise_if_operated()
-        gesture = self._gesture = _Gesture()
+        The release is sent in every case -- also when the press failed,
+        because a press whose response got lost may have landed -- and never
+        earlier than TOUCH_MIN_HOLD after the press, like the native page.
+        """
+        pressed = gesture.pressed
+        assert pressed is not None
         try:
             await self._command_lock.acquire()
-        except asyncio.CancelledError:
-            self._gesture = None
-            raise
-        gesture.locked = True
-        try:
-            await self._async_wait_cooldown()
-            await self._async_send(self.client.send_touch, x, y)
         except BaseException:
-            # The press may have reached the controller (lost response).
-            await asyncio.shield(self._async_release_touch())
-            self._gesture = None
-            self._last_command_time = time_mod.monotonic()
-            self._command_lock.release()
+            pressed.set_exception(HomeAssistantError("Touch aborted"))
+            if self._gesture is gesture:
+                self._gesture = None
             raise
-        gesture.started = time_mod.monotonic()
-        if gesture.release_requested:
-            await self._async_finish_gesture(gesture)
-            return
-        gesture.watchdog = self.hass.loop.call_later(
-            TOUCH_MAX_HOLD,
-            lambda: self.hass.async_create_task(self._async_finish_gesture(gesture)),
-        )
-
-    async def async_touch_up(self) -> None:
-        """Release the held touch; without one this does nothing."""
-        gesture = self._gesture
-        if gesture is None:
-            return
-        if not gesture.started:
-            # The press is still on its way; touch_down releases right after.
-            gesture.release_requested = True
-            return
-        await self._async_finish_gesture(gesture)
-
-    async def _async_finish_gesture(self, gesture: _Gesture) -> None:
-        """Release a pressed gesture once: keep the minimum hold, free the lock."""
-        if self._gesture is not gesture:
-            return
-        self._gesture = None
-        if gesture.watchdog is not None:
-            gesture.watchdog.cancel()
+        press_time = time_mod.monotonic()
         try:
-            remaining = TOUCH_MIN_HOLD - (time_mod.monotonic() - gesture.started)
-            if remaining > 0:
-                await asyncio.sleep(remaining)
-            await asyncio.shield(self._async_release_touch())
+            try:
+                await self._async_wait_cooldown()
+                press_time = time_mod.monotonic()
+                await self._async_send(self.client.send_touch, x, y)
+            except BaseException as err:
+                pressed.set_exception(
+                    err if isinstance(err, Exception) else HomeAssistantError("Touch aborted")
+                )
+                raise
+            pressed.set_result(None)
+            if hold is not None:
+                await asyncio.sleep(hold)
+            else:
+                try:
+                    await asyncio.wait_for(gesture.released.wait(), TOUCH_MAX_HOLD)
+                except TimeoutError:
+                    logger.warning(
+                        "Solvis display touch held for %s s, released automatically",
+                        TOUCH_MAX_HOLD,
+                    )
         finally:
-            self._last_command_time = time_mod.monotonic()
-            self._command_lock.release()
+            try:
+                remaining = TOUCH_MIN_HOLD - (time_mod.monotonic() - press_time)
+                if remaining > 0:
+                    await asyncio.sleep(remaining)
+                await self._async_release_touch()
+            finally:
+                self._last_command_time = time_mod.monotonic()
+                if self._gesture is gesture:
+                    self._gesture = None
+                self._command_lock.release()
+
+    def _start_gesture(
+        self, x: int, y: int, hold: float | None, gesture_id: str | None
+    ) -> _Gesture:
+        """Start a gesture task; it is not cancelled by a cancelled service call."""
+        self._raise_if_operated()
+        gesture = self._gesture = _Gesture(gesture_id)
+        gesture.pressed = self.hass.loop.create_future()
+        # Retrieve a press error even if no caller waits for it any more.
+        gesture.pressed.add_done_callback(lambda fut: fut.cancelled() or fut.exception())
+        gesture.task = self.hass.async_create_task(
+            self._async_run_gesture(gesture, x, y, hold), "solvis_remote touch"
+        )
+        # A failed press is reported to the caller; do not log it a second time.
+        gesture.task.add_done_callback(lambda task: task.cancelled() or task.exception())
+        return gesture
+
+    async def async_touch(self, x: int, y: int, duration: float = TOUCH_MIN_HOLD) -> None:
+        """Tap the display: press, hold for `duration`, release."""
+        gesture = self._start_gesture(x, y, max(duration, TOUCH_MIN_HOLD), None)
+        assert gesture.task is not None
+        await asyncio.shield(gesture.task)
+
+    async def async_touch_down(self, x: int, y: int, gesture_id: str | None = None) -> None:
+        """Press the display and hold until async_touch_up or TOUCH_MAX_HOLD.
+
+        Returns once the press has been sent.
+        """
+        gesture = self._start_gesture(x, y, None, gesture_id)
+        assert gesture.pressed is not None
+        await asyncio.shield(gesture.pressed)
+
+    async def async_touch_up(self, gesture_id: str | None = None) -> None:
+        """Release the held touch and wait until the release went out.
+
+        A release carrying a different gesture id than the held touch is
+        ignored, so one viewer cannot end another viewer's touch.
+        """
+        gesture = self._gesture
+        if gesture is None or gesture.task is None:
+            return
+        if gesture.gesture_id and gesture_id and gesture_id != gesture.gesture_id:
+            return
+        gesture.released.set()
+        await asyncio.wait({gesture.task})
 
     async def async_press_button(self, button: str) -> None:
         """Press one of the two hardware buttons next to the display."""
@@ -310,13 +343,12 @@ class SolvisDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._last_command_time = time_mod.monotonic()
 
     async def async_shutdown(self) -> None:
-        """Release a touch that is still held when the entry unloads."""
+        """Refuse new touches and finish a running one before unloading."""
+        self._closing = True
         gesture = self._gesture
-        if gesture is not None:
-            if gesture.started:
-                await self._async_finish_gesture(gesture)
-            else:
-                gesture.release_requested = True
+        if gesture is not None and gesture.task is not None:
+            gesture.released.set()
+            await asyncio.wait({gesture.task})
         await super().async_shutdown()
 
     def _compute_derived(self, data: dict[str, Any]) -> None:

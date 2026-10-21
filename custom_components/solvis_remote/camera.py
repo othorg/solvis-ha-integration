@@ -55,11 +55,12 @@ class SolvisDisplayCamera(CoordinatorEntity[SolvisDataUpdateCoordinator], Camera
 
     _attr_has_entity_name = True
     _attr_translation_key = "display"
-    _attr_content_type = "image/png"
 
     def __init__(self, coordinator: SolvisDataUpdateCoordinator) -> None:
         super().__init__(coordinator)
         Camera.__init__(self)
+        # Camera.__init__ sets content_type to JPEG; it is sent as the HTTP header.
+        self.content_type = "image/png"
         self._attr_unique_id = f"{coordinator.system_id}_display"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, coordinator.system_id)},

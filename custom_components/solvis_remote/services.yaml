@@ -50,6 +50,10 @@ touch_down:
           min: 0
           max: 255
           mode: box
+    gesture_id:
+      required: false
+      selector:
+        text:
 touch_up:
   fields:
     entity_id:
@@ -58,6 +62,10 @@ touch_up:
         entity:
           integration: solvis_remote
           domain: camera
+    gesture_id:
+      required: false
+      selector:
+        text:
 press_button:
   fields:
     entity_id:

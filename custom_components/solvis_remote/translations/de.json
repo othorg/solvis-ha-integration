@@ -154,14 +154,16 @@
       "fields": {
         "entity_id": { "name": "Display", "description": "Solvis-Display-Kamera." },
         "x": { "name": "X", "description": "Waagerechte Position, 0-479." },
-        "y": { "name": "Y", "description": "Senkrechte Position, 0-255." }
+        "y": { "name": "Y", "description": "Senkrechte Position, 0-255." },
+        "gesture_id": { "name": "Gesten-ID", "description": "Optional. Loslassen beendet nur die Beruehrung mit derselben ID." }
       }
     },
     "touch_up": {
       "name": "Display loslassen",
       "description": "Laesst eine mit 'Display druecken' gehaltene Beruehrung los.",
       "fields": {
-        "entity_id": { "name": "Display", "description": "Solvis-Display-Kamera." }
+        "entity_id": { "name": "Display", "description": "Solvis-Display-Kamera." },
+        "gesture_id": { "name": "Gesten-ID", "description": "Optional. Loslassen beendet nur die Beruehrung mit derselben ID." }
       }
     },
     "press_button": {

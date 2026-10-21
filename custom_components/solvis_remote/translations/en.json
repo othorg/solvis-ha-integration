@@ -154,14 +154,16 @@
       "fields": {
         "entity_id": { "name": "Display", "description": "Solvis display camera." },
         "x": { "name": "X", "description": "Horizontal position, 0-479." },
-        "y": { "name": "Y", "description": "Vertical position, 0-255." }
+        "y": { "name": "Y", "description": "Vertical position, 0-255." },
+        "gesture_id": { "name": "Gesture ID", "description": "Optional. A release only ends the touch pressed with the same ID." }
       }
     },
     "touch_up": {
       "name": "Release display",
       "description": "Releases a touch held with 'Press display'.",
       "fields": {
-        "entity_id": { "name": "Display", "description": "Solvis display camera." }
+        "entity_id": { "name": "Display", "description": "Solvis display camera." },
+        "gesture_id": { "name": "Gesture ID", "description": "Optional. A release only ends the touch pressed with the same ID." }
       }
     },
     "press_button": {
