@@ -97,9 +97,9 @@ class SolvisClient:
         "s14": {"title": "Entstoerung", "start": 78, "size": 4, "unit": None},
         "s15": {"title": "Kollektor-Uebergabe", "start": 82, "size": 4, "unit": None},
         "s16": {"title": "<Unbekannt>", "start": 86, "size": 4, "unit": None},
-        # Flow rates
-        "s17": {"title": "Durchfluss Solar", "start": 90, "size": 4, "unit": "l/h"},
-        "s18": {"title": "Durchfluss Warmwasser", "start": 94, "size": 4, "unit": "l/m"},
+        # Flow rates: S18 comes first, as in the controller's own schema.html
+        "s18": {"title": "Durchfluss Warmwasser", "start": 90, "size": 4, "unit": "l/m"},
+        "s17": {"title": "Durchfluss Solar", "start": 94, "size": 4, "unit": "l/h"},
         # Analogue inputs
         "ai1": {"title": "<Unbekannt>", "start": 98, "size": 4, "unit": None},
         "ai2": {"title": "<Unbekannt>", "start": 102, "size": 4, "unit": None},
@@ -159,9 +159,10 @@ class SolvisClient:
     for _k in [f"s{i}" for i in range(1, 17)]:
         DECODE_RULES[_k] = ("signed_div10",)
 
-    # Flow rates S17-S18: unsigned, /10
-    for _k in ["s17", "s18"]:
-        DECODE_RULES[_k] = ("unsigned_div10",)
+    # Flow rates: S18 (hot water, l/min) unsigned /10; S17 (solar, l/h) is
+    # sent in whole l/h and shown unscaled by the controller's schema.html
+    DECODE_RULES["s18"] = ("unsigned_div10",)
+    DECODE_RULES["s17"] = ("raw_int",)
 
     # Analogue inputs: unsigned, /10
     for _k in ["ai1", "ai2", "ai3"]:

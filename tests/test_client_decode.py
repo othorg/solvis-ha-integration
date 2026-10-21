@@ -86,11 +86,13 @@ class TestDecode:
         # 128 / 2.55 ≈ 50.2%
         assert self.data["ao1"]["value"] == pytest.approx(50.196, abs=0.01)
 
-    def test_flow_rate_s17(self):
-        assert self.data["s17"]["value"] == pytest.approx(30.0)
-
-    def test_flow_rate_s18(self):
+    def test_flow_rate_s18_hot_water(self):
+        # First flow word (offset 90), tenths of l/min
         assert self.data["s18"]["value"] == pytest.approx(10.0)
+
+    def test_flow_rate_s17_solar(self):
+        # Second flow word (offset 94), whole l/h without scaling
+        assert self.data["s17"]["value"] == 300
 
     def test_digital_output_a1_on(self):
         assert self.data["a1"]["value"] == "on"
